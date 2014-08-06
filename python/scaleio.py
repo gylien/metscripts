@@ -1,133 +1,127 @@
 import numpy as np
 import numpy.ma as ma
+from ncphysio import *
 from netCDF4 import Dataset
 import os.path
 
-dimlist = ['x', 'xh', 'y', 'yh', 'z', 'zh', 'time', 'time1']
-dimsublist = ['x', 'xh', 'y', 'yh']
-dimorder = [3, 3, 2, 2, 1, 1, 0, 0]
-dimoutorder = ['T', 'Z', 'Y', 'X']
+scale_dimlist = [
+['time', 'time1'],
+['nv'],
+['z', 'zh', 'lz', 'lzh', 'uz', 'uzh', 'CZ', 'FZ', 'FDZ', 'LCZ', 'LFZ', 'UCZ', 'UFZ'],
+['y', 'yh', 'CY', 'FY', 'FDY', 'CYG', 'FYG'],
+['x', 'xh', 'CX', 'FX', 'FDX', 'CXG', 'FXG']
+]
+scale_dimlist_g = [
+[],
+[],
+[],
+['y', 'yh'],
+['x', 'xh']
+]
+scale_file_suffix = '.pe{:06d}.nc'
 
-def scale_open(basename, mode='r', dim=None, dim_s=None, dim_e=None):
-    ncfile = [basename + '.pe{:06d}.nc'.format(0)]
-    if not os.path.isfile(ncfile[0]):
+
+def scale_open(basename, mode='r', scale_dimdef=None):
+    """
+    Open a set of partial scale I/O files and return the definition of 
+    global and subdomain dimensions.
+    """
+    ncfile = basename + scale_file_suffix.format(0)
+    if not os.path.isfile(ncfile):
         if mode == 'r':
-            raise ValueError, '[Error] File does not exist.'
-        elif dim is None:
-            raise ValueError, '[Error] File does not exist.'
+            raise IOError, 'File does not exist.'
+        elif scale_dimdef is None:
+            raise IOError, 'File does not exist.'
         else:
-#            scale_create_new()
-            raise ValueError, '[Error] Scale_create has not been supported yet...'
+#            scale_create_new(basename, scale_dimdef)
+            raise IOError, 'Scale_create has not been supported yet...'
 
-    rootgrp = [Dataset(ncfile[0], mode)]
-
-    dim = dict.fromkeys(dimlist)
-    dim_s = dict.fromkeys(dimsublist)
-    dim_e = dict.fromkeys(dimsublist)
-    for idim in dimlist:
-        if idim in rootgrp[0].dimensions:
-            dim[idim] = rootgrp[0].variables[idim][:]
-            if idim in dimsublist:
-                dim_s[idim] = [0]
-                dim_e[idim] = [len(rootgrp[0].dimensions[idim])]
-        else:
-            dim[idim] = None
-
-    ip = 1
+    rootgrps = []
+    sub_ip = {}
+    sub_idx = {}
+    sub_var = {}
+    ip = 0
     while True:
-        ncfile.append(basename + '.pe{:06d}.nc'.format(ip))
-        if not os.path.isfile(ncfile[ip]):
+        ncfile = basename + scale_file_suffix.format(ip)
+        if not os.path.isfile(ncfile):
             break
 
-        rootgrp.append(Dataset(ncfile[ip], mode))
-        for idim in dimlist:
-            if idim in dimsublist:
-                lent = len(rootgrp[0].dimensions[idim])
-                dimt = rootgrp[ip].variables[idim][:]
-                if dimt[0] < dim[idim][0]:
-                    for i in xrange(ip):
-                        dim_s[idim][i] += lent
-                        dim_e[idim][i] += lent
-                    dim_s[idim].append(0)
-                    dim_e[idim].append(lent)
-                    dim[idim] = np.concatenate((dimt, dim[idim]))
-                elif dimt[-1] > dim[idim][-1]:
-                    dim_s[idim].append(max(dim_e[idim]))
-                    dim_e[idim].append(dim_s[idim][-1] + lent)
-                    dim[idim] = np.concatenate((dim[idim], dimt))
+        rootgrps.append(Dataset(ncfile, mode))
+        for idiml in scale_dimlist_g:
+            for idim in idiml:
+                if ip == 0:
+                    sub_ip[idim] = [ip] * len(rootgrps[ip].dimensions[idim])
+                    sub_idx[idim] = range(len(rootgrps[ip].dimensions[idim]))
+                    sub_var[idim] = rootgrps[ip].variables[idim][:]
                 else:
-                    dim_s[idim].append((np.where(dim[idim] == dimt[0]))[0][0])
-                    dim_e[idim].append((np.where(dim[idim] == dimt[-1]))[0][0] + 1)
+                    sub_ip[idim] += [ip] * len(rootgrps[ip].dimensions[idim])
+                    sub_idx[idim] += range(len(rootgrps[ip].dimensions[idim]))
+                    sub_var[idim] = np.append(sub_var[idim], rootgrps[ip].variables[idim][:])
         ip += 1
-
     nproc = ip
-    return nproc, rootgrp, dim, dim_s, dim_e
+    dimlen = ncphys_read_dimlen(rootgrps[0], dimlist=scale_dimlist)
 
-def scale_close(rootgrp):
-    for irg in rootgrp:
+    dimcoor_g = {}
+    dimlen_g = {}
+    dimstart = {}
+    for idiml in scale_dimlist_g:
+        for idim in idiml:
+            dimcoor_g[idim], indices = np.unique(sub_var[idim], return_inverse=True)
+            dimlen_g[idim] = len(dimcoor_g[idim])
+            dimstart[idim] = [None] * nproc
+            for i, ip in enumerate(sub_ip[idim]):
+                if dimstart[idim][ip] is None:
+                    dimstart[idim][ip] = indices[i] - sub_idx[idim][i]
+                elif dimstart[idim][ip] != indices[i] - sub_idx[idim][i]:
+                    raise ValueError, 'Subdomains are not consistent.'
+
+    scale_dimdef = {'len': dimlen, 'len_g': dimlen_g, 'coor_g': dimcoor_g, 'start': dimstart}
+    return nproc, rootgrps, scale_dimdef
+
+
+def scale_close(rootgrps):
+    """
+    Close a set of partial scale I/O files.
+    """
+    for irg in rootgrps:
         irg.close()
 
-def scale_read(nproc, rootgrp, dim, dim_s, dim_e, varname, time=None, it=None):
-    dimtest = rootgrp[0].variables[varname].dimensions
-    dimord = [None] * len(dimoutorder)
-    dimname = [None] * len(dimoutorder)
-    for idim, idimord in zip(dimlist, dimorder):
-        if idim in dimtest:
-            if dimord[idimord] is None:
-                dimord[idimord] = dimtest.index(idim)
-                dimname[idimord] = idim
-            else:
-                raise ValueError, '[Error] Duplicated dimensions.'
 
-    dimshape = []
-    for idim in dimname[1:]:
-        if idim is not None:
-            dimshape.append(len(dim[idim]))
-    if dimname[0] is not None:
-        if time is not None:
-            found = (np.where(dim[dimname[0]] == time))[0]
-            if len(found) == 0:
-                raise ValueError, '[Error] Cannot find time = ' + str(time) + ' in the file.'
-            else:
-                it = found[0]
-        elif it is None:
-            it = 0
+def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
+    """
+    Read a variable from a set of partial scale I/O files.
 
-
-
-
-#    print dimord
-#    print dimname
-#    print dimshape
-#    print time, it
-
-
-    print 0
-
-
-    if hasattr(rootgrp[0].variables[varname][:], 'fill_value'):
-        vardata = ma.zeros(dimshape, dtype=rootgrp[0].variables[varname].dtype,
-                                     fill_value=rootgrp[0].variables[varname][:].fill_value)
+    Can choose to read a single time or all times.
+    """
+    vardim, vardata_0 = ncphys_read(rootgrps[0], varname, dimlist=scale_dimlist,
+                                    dimlen=scale_dimdef['len'], time=time, it=it)
+    varshape = []
+    vardim_sub = []
+    for idim in vardim:
+        varshape.append(scale_dimdef['len'][idim])
+        vardim_sub.append(None)
+        for idiml in scale_dimlist_g:
+            if idim in idiml:
+                varshape[-1] = scale_dimdef['len_g'][idim]
+                vardim_sub[-1] = idim
+                break
+    if all(i is None for i in vardim_sub):
+        return vardim, vardata_0
     else:
-        vardata = np.zeros(dimshape, dtype=rootgrp[0].variables[varname].dtype)
-
-    for ip in xrange(nproc):
-        vartemp = np.transpose(rootgrp[ip].variables[varname], [i for i in dimord if i is not None])
-        if dimname[0] is not None:
-            vartemp = vartemp[it]
-
-        if dimname[1] is not None and dimname[2] is not None and dimname[3] is not None:
-           vardata[:, dim_s[dimname[2]][ip]:dim_e[dimname[2]][ip],
-                      dim_s[dimname[3]][ip]:dim_e[dimname[3]][ip]] = vartemp
-        elif dimname[1] is None and dimname[2] is not None and dimname[3] is not None:
-           vardata[dim_s[dimname[2]][ip]:dim_e[dimname[2]][ip],
-                   dim_s[dimname[3]][ip]:dim_e[dimname[3]][ip]] = vartemp
+        if type(vardata_0) == ma.MaskedArray:
+            vardata = ma.masked_all(varshape, dtype=vardata_0.dtype)
+            vardata.fill_value = vardata_0.fill_value
         else:
-            raise ValueError, '[Error] Unsupported data dimensions ' + dimname
-
-
-        print ip+1
-
-
-    return vardata
-
+            vardata = np.empty(varshape, dtype=vardata_0.dtype)
+        for ip in xrange(nproc):
+            slice_obj = [slice(None)] * len(vardim)
+            for i, idim in enumerate(vardim_sub):
+                if idim is not None:
+                    slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
+                                         scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
+            if ip == 0:
+                vardata[slice_obj] = vardata_0
+            else:
+                vardim, vardata[slice_obj] = ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist,
+                                             dimlen=scale_dimdef['len'], time=time, it=it)
+        return vardim, vardata
