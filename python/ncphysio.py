@@ -119,9 +119,9 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, time=None, it=None):
 
 def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, time=None, it=None):
     """
-    Write a variable from a NetCDF file.
+    Write a variable to a NetCDF file.
 
-    Can choose to read a single time or all times.
+    Can choose to write a single time or all times.
 
     Parameters
     ----------

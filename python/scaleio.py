@@ -93,8 +93,7 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
 
     Can choose to read a single time or all times.
     """
-    vardim, vardata_0 = ncphys_read(rootgrps[0], varname, dimlist=scale_dimlist,
-                                    dimlen=scale_dimdef['len'], time=time, it=it)
+    vardim, vardata_0 = ncphys_read(rootgrps[0], varname, dimlist=scale_dimlist, time=time, it=it)
     varshape = []
     vardim_sub = []
     for idim in vardim:
@@ -105,6 +104,7 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
                 varshape[-1] = scale_dimdef['len_g'][idim]
                 vardim_sub[-1] = idim
                 break
+
     if all(i is None for i in vardim_sub):
         return vardim, vardata_0
     else:
@@ -122,6 +122,31 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
             if ip == 0:
                 vardata[slice_obj] = vardata_0
             else:
-                vardim, vardata[slice_obj] = ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist,
-                                             dimlen=scale_dimdef['len'], time=time, it=it)
+                vardim, vardata[slice_obj] = ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist, time=time, it=it)
         return vardim, vardata
+
+
+def scale_write(nproc, rootgrps, scale_dimdef, varname, vardim, vardata, time=None, it=None):
+    """
+    Write a variable to a set of partial scale I/O files.
+
+    Can choose to write a single time or all times.
+    """
+    varshape = []
+    vardim_sub = []
+    for idim in vardim:
+        varshape.append(scale_dimdef['len'][idim])
+        vardim_sub.append(None)
+        for idiml in scale_dimlist_g:
+            if idim in idiml:
+                varshape[-1] = scale_dimdef['len_g'][idim]
+                vardim_sub[-1] = idim
+                break
+
+    for ip in xrange(nproc):
+        slice_obj = [slice(None)] * len(vardim)
+        for i, idim in enumerate(vardim_sub):
+            if idim is not None:
+                slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
+                                     scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
+        ncphys_write(rootgrps[ip], varname, vardim, vardata[slice_obj], dimlist=scale_dimlist, time=time, it=it)
