@@ -31,7 +31,7 @@ def ncphys_read_dimlen(rootgrp, dimlist=dimlist_default):
     return dimlen
 
 
-def ncphys_read(rootgrp, varname, dimlist=dimlist_default, dimlen=None, time=None, it=None):
+def ncphys_read(rootgrp, varname, dimlist=dimlist_default, time=None, it=None):
     """
     Read a variable from a NetCDF file.
 
@@ -46,9 +46,6 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, dimlen=None, time=Non
         The variable name.
     dimlist : array of array, optional
         List of dimensions in the NetCDF file. Default: `dimlist_default`
-    dimlen : dictionary, optional
-        Lengths of dimensions in the NetCDF file, returned from 
-        `ncphys_read_dims`. Default: automatically get the lengths of dimensions.
     time : number, optional
         Target time in physical time unit.
     it : int, optional
@@ -62,9 +59,9 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, dimlen=None, time=Non
         Variable data in a ndarray or masked_array (if the variable has the 
         `_FillValue` attribute).
     """
-    # If dimlen is not given, read the dimension lengths
-    if dimlen is None:
-        dimlen = ncphys_read_dims(rootgrp, dimlist=dimlist)
+    # Check if the variable exists in the NetCDF file
+    if varname not in rootgrp.variables:
+        raise IOError, "Variable '" + varname + "' does not exist."
 
     # Check the variable dimensions and the order of the variable dimensions
     # in the input NetCDF file
@@ -118,3 +115,74 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, dimlen=None, time=Non
         vardata = np.transpose(vardata, axes=transaxes)
 
     return vardim_out, vardata
+
+
+def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, time=None, it=None):
+    """
+    Write a variable from a NetCDF file.
+
+    Can choose to read a single time or all times.
+
+    Parameters
+    ----------
+    rootgrp : netcdf4-python Dataset instance
+        The input NetCDF file.
+    varname : string
+        The variable name.
+    vardim : dictionary
+        Dimensions of the input variable data.
+    vardata : ndarray or masked_array
+        Variable data in a ndarray or masked_array
+    dimlist : array of array, optional
+        List of dimensions in the NetCDF file. Default: `dimlist_default`
+    time : number, optional
+        Target time in physical time unit.
+    it : int, optional
+        Target time index. Defalut to 0 if both `time` and `it` are not given.
+    """
+    # Check if the variable exists in the NetCDF file
+    if varname in rootgrp.variables:
+        vardim_in = rootgrp.variables[varname].dimensions
+    else:
+        raise IOError, "Variable '" + varname + "' does not exist."
+#        ncphys_create_var(vardim)
+#        vardim_in = vardim
+
+    # Check the variable dimensions and the order of the variable dimensions
+    # in the input NetCDF file, and reorder the axes of the data if necessary
+    dimord = [None] * len(vardim_in)
+    tdim = None
+    for i, idim in enumerate(vardim_in):
+        if idim in vardim:
+            dimord[i] = vardim.index(idim)
+            if vardata.shape[dimord[i]] != len(rootgrp.dimensions[idim]):
+                raise ValueError, "Variable dimensions mismatch."
+        elif idim in dimlist[0] and tdim is None and (time != 'all' and it != 'all'):
+            dimord[i] = None
+            tdim = i
+            if time is not None:
+                found = np.where(rootgrp.variables[idim][:] == time)[0]
+                if len(found) == 0:
+                    raise ValueError, 'Cannot find time = ' + str(time)
+                else:
+                    it = found[0]
+            elif it is None:
+                it = 0
+        else:
+            raise ValueError, "Variable dimensions mismatch."
+    transaxes = [i for i in dimord if i is not None]
+    if len(transaxes) != len(vardim):
+        raise ValueError, "Variable dimensions mismatch."
+    if transaxes != range(len(transaxes)):
+        vardata = np.transpose(vardata, axes=transaxes)
+
+    # Write the variable data
+    if tdim is None:
+        rootgrp.variables[varname][:] = vardata
+    else:
+        if tdim == 0:
+            rootgrp.variables[varname][it] = vardata
+        else:
+            slice_obj = [slice(None)] * len(vardim_in)
+            slice_obj[tdim] = it
+            rootgrp.variables[varname][slice_obj] = vardata
