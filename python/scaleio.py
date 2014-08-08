@@ -3,6 +3,7 @@ import numpy.ma as ma
 from ncphysio import *
 from netCDF4 import Dataset
 import os.path
+import datetime as dt
 
 scale_dimlist = [
 ['time', 'time1'],
@@ -19,6 +20,7 @@ scale_dimlist_g = [
 ['x', 'xh']
 ]
 scale_file_suffix = '.pe{:06d}.nc'
+scale_time_0 = dt.datetime(2013, 1, 1, 0, 0, 0)
 
 
 def scale_open(basename, mode='r', scale_dimdef=None):
@@ -150,3 +152,17 @@ def scale_write(nproc, rootgrps, scale_dimdef, varname, vardim, vardata, time=No
                 slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
                                      scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
         ncphys_write(rootgrps[ip], varname, vardim, vardata[slice_obj], dimlist=scale_dimlist, time=time, it=it)
+
+
+def scale_gettime(scale_time):
+    """
+    Convert the python datetime to the scale model time.
+    """
+    return scale_time_0 + dt.timedelta(seconds=scale_time)
+
+
+def scale_puttime(datetime):
+    """
+    Convert the scale model time to the python datetime.
+    """
+    return (datetime - scale_time_0).total_seconds()
