@@ -61,7 +61,17 @@ def scale_open(basename, mode='r', scale_dimdef=None):
                     sub_var[idim] = np.append(sub_var[idim], rootgrps[ip].variables[idim][:])
         ip += 1
     nproc = ip
-    dimlen = ncphys_read_dimlen(rootgrps[0], dimlist=scale_dimlist)
+
+#    dimlen = ncphys_read_dimlen(rootgrps[0], dimlist=scale_dimlist)
+    dimlen = {}
+    for idiml in scale_dimlist:
+        for idim in idiml:
+            dimlen[idim] = [None] * nproc
+            for ip in xrange(nproc): 
+                if idim in rootgrps[ip].dimensions:
+                    dimlen[idim][ip] = len(rootgrps[ip].dimensions[idim])
+                else:
+                    dimlen[idim][ip] = None
 
     dimcoor_g = {}
     dimlen_g = {}
@@ -99,7 +109,8 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
     varshape = []
     vardim_sub = []
     for idim in vardim:
-        varshape.append(scale_dimdef['len'][idim])
+#        varshape.append(scale_dimdef['len'][idim])
+        varshape.append(scale_dimdef['len'][idim][0])
         vardim_sub.append(None)
         for idiml in scale_dimlist_g:
             if idim in idiml:
@@ -119,8 +130,10 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
             slice_obj = [slice(None)] * len(vardim)
             for i, idim in enumerate(vardim_sub):
                 if idim is not None:
+#                    slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
+#                                         scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
                     slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
-                                         scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
+                                         scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim][ip])
             if ip == 0:
                 vardata[slice_obj] = vardata_0
             else:
@@ -137,7 +150,8 @@ def scale_write(nproc, rootgrps, scale_dimdef, varname, vardim, vardata, time=No
     varshape = []
     vardim_sub = []
     for idim in vardim:
-        varshape.append(scale_dimdef['len'][idim])
+#        varshape.append(scale_dimdef['len'][idim])
+        varshape.append(scale_dimdef['len'][idim][0])
         vardim_sub.append(None)
         for idiml in scale_dimlist_g:
             if idim in idiml:
@@ -149,8 +163,10 @@ def scale_write(nproc, rootgrps, scale_dimdef, varname, vardim, vardata, time=No
         slice_obj = [slice(None)] * len(vardim)
         for i, idim in enumerate(vardim_sub):
             if idim is not None:
+#                slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
+#                                     scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
                 slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
-                                     scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
+                                     scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim][ip])
         ncphys_write(rootgrps[ip], varname, vardim, vardata[slice_obj], dimlist=scale_dimlist, time=time, it=it)
 
 

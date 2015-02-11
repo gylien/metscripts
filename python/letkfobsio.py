@@ -9,7 +9,11 @@ obsrecords = {
 'gfs2':   {'names':['elm','lon','lat','lev','dat','err','typ','tdf','ohx','oqc'],
            'formats':['i4','f4','f4','f4','f4','f4','i4','f4','f4','i4']},
 'gfsdep': {'names':['elm','lon','lat','lev','dat','err','typ','tdf','omb','oma'],
-           'formats':['i4','f4','f4','f4','f4','f4','i4','f4','f4','f4']}
+           'formats':['i4','f4','f4','f4','f4','f4','i4','f4','f4','f4']},
+'scale':  {'names':['elm','lon','lat','lev','dat','err','typ','tdf'],
+           'formats':['i4','f4','f4','f4','f4','f4','i4','f4']},
+'scale2': {'names':['set','idx','ohx','oqc','gri','grj'],
+           'formats':['i4','i4','f4','i4','f4','f4']}
 }
 
 obselems = {
@@ -19,6 +23,9 @@ obselems = {
  3074: 'Tv',
  3330: 'Q',
  3331: 'RH',
+ 4001: 'RADAR_REF',
+ 4002: 'RADAR_VR',
+ 4003: 'RADAR_PRH',
 14593: 'PS',
 19999: 'PRC',
 99991: 'TCX',
@@ -48,7 +55,8 @@ obstypes = {
 18: 'RASSDA',
 19: 'WDSATR',
 20: 'ASCATW',
-21: 'TMPAPR'
+21: 'TMPAPR',
+22: 'PHARAD',
 }
 
 def endian_det(endian=None):
@@ -99,6 +107,37 @@ def readobs_all(fo, otype='gfs', endian=None):
         fo.read(4)
 
     return np.array(data, dtype=np.dtype(obsrecords[otype]))
+
+def readobs_radar_all(fo, otype='gfs', endian=None):
+    try:
+        obsrecords[otype]
+    except KeyError:
+        raise ValueError, "'otype' has to be " + str(obsrecords.keys())
+    reclen = len(obsrecords[otype]['names'])
+    dtyp, dtypistr = endian_det(endian)
+
+    data = []
+    fo.seek(0)
+
+    fo.read(4)
+    radar_lon = np.fromfile(fo, dtype=dtyp, count=1)[0]
+    fo.read(4)
+    fo.read(4)
+    radar_lat = np.fromfile(fo, dtype=dtyp, count=1)[0]
+    fo.read(4)
+    fo.read(4)
+    radar_z = np.fromfile(fo, dtype=dtyp, count=1)[0]
+    fo.read(4)
+
+    while fo.read(4):
+        sglobs = np.fromfile(fo, dtype=dtyp, count=reclen).tolist()
+        for i in xrange(reclen):
+            if obsrecords[otype]['formats'][i] == 'i4':
+                sglobs[i] = int(round(sglobs[i]))
+        data.append(tuple(sglobs))
+        fo.read(4)
+
+    return radar_lon, radar_lat, radar_z, np.array(data, dtype=np.dtype(obsrecords[otype]))
 
 def writeobs(fo, sglobs, endian=None):
     dtyp, dtypistr = endian_det(endian)
