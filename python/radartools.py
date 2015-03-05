@@ -5,14 +5,13 @@ import datetime as dt
 import time
 
 
-endian = '>'
-dtype_real = endian + 'f4'
-dtype_int = endian + 'i4'
-
 Re = 6370.e3 # Earth radius in (m)
 
 
-def radarobs_read(filename):
+def radarobs_read(filename, endian=''):
+    dtype_real = endian + 'f4'
+    dtype_int = endian + 'i4'
+
     t0 = time.time()
     data = {}
 
@@ -20,7 +19,10 @@ def radarobs_read(filename):
 
     buf = np.zeros(6, dtype=dtype_real)
     fort_seq_read(f, buf)
-    data['time'] = dt.datetime(*buf)
+    try:
+        data['time'] = dt.datetime(*buf)
+    except ValueError:
+        data['time'] = None
 
     buf = np.zeros(8, dtype=dtype_real)
     fort_seq_read(f, buf)
@@ -97,7 +99,7 @@ def radar_georeference(data):
 
     data['r_earth'] = Re
 
-    data['symhgt'] = np.zeros((data['ne'], data['nr']), dtype=dtype_real)
+    data['symhgt'] = np.zeros((data['ne'], data['nr']), dtype='f4')
 
     for ie in xrange(data['ne']):
         for ir in xrange(data['nr']):
@@ -112,27 +114,34 @@ def radar_georeference(data):
                                          2. * data['radi'][ir] * ke * Re * np.sin(np.deg2rad(data['elev'][ie]))) \
                                - ke * Re
 
-    data['radi_h'] = np.zeros((data['ne'], data['nr']), dtype=dtype_real)
-    data['lon'] = np.zeros((data['ne'], data['nr'], data['na']), dtype=dtype_real)
-    data['lat'] = np.zeros((data['ne'], data['nr'], data['na']), dtype=dtype_real)
-    data['hgt'] = np.zeros((data['ne'], data['nr'], data['na']), dtype=dtype_real)
+    data['radi_h'] = np.zeros((data['ne'], data['nr']), dtype='f4')
+    data['lon'] = np.zeros((data['ne'], data['nr'], data['na']), dtype='f4')
+    data['lat'] = np.zeros((data['ne'], data['nr'], data['na']), dtype='f4')
+    data['hgt'] = np.zeros((data['ne'], data['nr'], data['na']), dtype='f4')
 
-    for ie in [9]:
+    
+##    for ie in [9]:
 #    for ie in xrange(data['ne']):
 
-        print 'ie =', ie
+#        print 'ie =', ie
 
-        # The curvature of the radar beam is not taken into account.
-        data['radi_h'][ie] = ke * Re * np.arcsin(data['radi'] * np.cos(np.deg2rad(data['elev'][ie])) / (ke * Re)) # Radar horizontal range
+#        # The curvature of the radar beam is not taken into account.
+#        data['radi_h'][ie] = ke * Re * np.arcsin(data['radi'] * np.cos(np.deg2rad(data['elev'][ie])) / (ke * Re)) # Radar horizontal range
 
-        # distance_on_earth=Re*acos(( -radar.radius'.^2+(Re+radar.altitude)^2+(Re+radar.height(:,kk)).^2 )./(2*(Re+radar.altitude)*(Re+radar.height(:,kk))));
-        # radar.X(:,:,kk)=distance_on_earth.*sin(az_matrix*d2r);
-        # radar.Y(:,:,kk)=distance_on_earth.*cos(az_matrix*d2r);
+#        for ir in xrange(data['nr']):
+#            for ia in xrange(data['na']):
+#                data['lon'][ie,ir,ia], data['lat'][ie,ir,ia] = \
+#                    ll_arc_distance(data['radar_lon'], data['radar_lat'], data['radi_h'][ie,ir], data['azim'][ia])
 
-        for ir in xrange(data['nr']):
-            for ia in xrange(data['na']):
-                data['lon'][ie,ir,ia], data['lat'][ie,ir,ia] = \
-                    ll_arc_distance(data['radar_lon'], data['radar_lat'], data['radi_h'][ie,ir], data['azim'][ia])
+
+#    np.save('radi_h.npy', data['radi_h'])
+#    np.save('lon.npy', data['lon'])
+#    np.save('lat.npy', data['lat'])
+
+    data['radi_h'] = np.load('radi_h.npy')
+    data['lon'] = np.load('lon.npy')
+    data['lat'] = np.load('lat.npy')
+
 
     for ia in xrange(data['na']):
         data['hgt'][:,:,ia] = data['symhgt']
