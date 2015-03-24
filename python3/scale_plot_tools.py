@@ -58,11 +58,11 @@ class ScalePlot:
 
 
     def setvar(self, **kwargs):
-        for key, value in kwargs.items():
+        for key, value in list(kwargs.items()):
             if hasattr(ScalePlot, key):
                 setattr(ScalePlot, key, value)
             else:
-                raise KeyError, "Class ScalePlot does not support variable '{0:s}'.".format(key)
+                raise KeyError("Class ScalePlot does not support variable '{0:s}'.".format(key))
 
 
     def xymap(self, data, ax=None, **kwargs):
@@ -145,7 +145,7 @@ class ScalePlot:
         else:
             raise ValueError("type of 't' should be either 'int' or 'datetime.datetime'.")
         if self.t is not None:
-            print 'time =', timeobj.strftime('%Y-%m-%d %H:%M:%S')
+            print('time =', timeobj.strftime('%Y-%m-%d %H:%M:%S'))
 
         var = sio.scale_read(self.nproc, self.rootgrps, self.dimdef, varname, time=time, it=it)[1]
 

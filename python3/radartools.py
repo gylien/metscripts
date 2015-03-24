@@ -56,25 +56,25 @@ def radarobs_read(filename, endian=''):
     data['attn_fac'] = buf[0]
 
     buf = np.zeros((data['ne'], data['nr'], data['na']), dtype=dtype_real)
-    for ie in xrange(data['ne']):
+    for ie in range(data['ne']):
         fort_seq_read(f, buf[ie])
     data['ref'] = ma.masked_values(buf, data['undef'])
 
-    for ie in xrange(data['ne']):
+    for ie in range(data['ne']):
         fort_seq_read(f, buf[ie])
     data['wind'] = ma.masked_values(buf, data['undef'])
 
-    for ie in xrange(data['ne']):
+    for ie in range(data['ne']):
         fort_seq_read(f, buf[ie])
     data['attn'] = ma.masked_values(buf, data['undef'])
 
-    for ie in xrange(data['ne']):
+    for ie in range(data['ne']):
         fort_seq_read(f, buf[ie])
     data['qc'] = ma.masked_values(buf, data['undef'])
 
     f.close()
 
-    print "Radar data '{:s}' was read in {:.3f} seconds".format(filename, time.time() - t0)
+    print("Radar data '{:s}' was read in {:.3f} seconds".format(filename, time.time() - t0))
     return data
 
 
@@ -101,8 +101,8 @@ def radar_georeference(data, lon=None, lat=None, radi_h=None):
 
     data['symhgt'] = np.zeros((data['ne'], data['nr']), dtype='f4')
 
-    for ie in xrange(data['ne']):
-        for ir in xrange(data['nr']):
+    for ie in range(data['ne']):
+        for ir in range(data['nr']):
             # Two possibilities the second probably more accurate than the
             # first one, but both assume a standard constant value for the
             # refractivity index.
@@ -120,15 +120,15 @@ def radar_georeference(data, lon=None, lat=None, radi_h=None):
     data['hgt'] = np.zeros((data['ne'], data['nr'], data['na']), dtype='f4')
 
     if (lon is None) or (lat is None) or (radi_h is None):
-        for ie in xrange(data['ne']):
+        for ie in range(data['ne']):
 
-            print 'ie =', ie
+            print('ie =', ie)
 
             # The curvature of the radar beam is not taken into account.
             data['radi_h'][ie] = ke * Re * np.arcsin(data['radi'] * np.cos(np.deg2rad(data['elev'][ie])) / (ke * Re)) # Radar horizontal range
 
-            for ir in xrange(data['nr']):
-                for ia in xrange(data['na']):
+            for ir in range(data['nr']):
+                for ia in range(data['na']):
                     data['lon'][ie,ir,ia], data['lat'][ie,ir,ia] = \
                         ll_arc_distance(data['radar_lon'], data['radar_lat'], data['radi_h'][ie,ir], data['azim'][ia])
 
@@ -142,7 +142,7 @@ def radar_georeference(data, lon=None, lat=None, radi_h=None):
         data['lat'] = np.load(lat)
 
 
-    for ia in xrange(data['na']):
+    for ia in range(data['na']):
         data['hgt'][:,:,ia] = data['symhgt']
 
     return True
