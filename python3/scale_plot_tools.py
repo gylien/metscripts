@@ -2,6 +2,7 @@ import numpy as np
 #import numpy.ma as ma
 import datetime as dt
 import matplotlib.pyplot as plt
+import matplotlib.colors as pltcol
 import mpl_toolkits.basemap as bm
 import scaleio as sio
 
@@ -12,6 +13,7 @@ class ScalePlot:
     # shade/contour
     shade = 'auto'    # None: No shade;   'auto': Yes, auto levels; array-like: Yes, given levels
     shade_cmap = None
+    shade_norm = None
     contour = None    # None: No contour; 'auto': Yes, auto levels; array-like: Yes, given levels
     coutour_colors = 'gray'
 
@@ -98,11 +100,16 @@ class ScalePlot:
         csf = None
         cbar = None
         if ScalePlot.shade == 'auto':
-            csf = bmap.contourf(m_x, m_y, data, cmap=ScalePlot.shade_cmap, extend='both')
+            csf = bmap.contourf(m_x, m_y, data, cmap=ScalePlot.shade_cmap, norm=ScalePlot.shade_norm, extend='both')
         elif hasattr(ScalePlot.shade, '__iter__'):  # check if it is array-like
-            csf = bmap.contourf(m_x, m_y, data, ScalePlot.shade, cmap=ScalePlot.shade_cmap, extend='both')
+            if ScalePlot.shade_norm is None:
+                csf = bmap.contourf(m_x, m_y, data, ScalePlot.shade, cmap=ScalePlot.shade_cmap,
+                                    norm=pltcol.BoundaryNorm([-float('inf')] + list(ScalePlot.shade) + [float('inf')],
+                                    ScalePlot.shade_cmap.N), extend='both')
+            else:
+                csf = bmap.contourf(m_x, m_y, data, ScalePlot.shade, cmap=ScalePlot.shade_cmap, norm=ScalePlot.shade_norm, extend='both')
         if csf is not None:
-            cbar = bmap.colorbar(csf, location=ScalePlot.cbar_loc, pad=ScalePlot.cbar_pad)
+            cbar = bmap.colorbar(csf, location=ScalePlot.cbar_loc, pad=ScalePlot.cbar_pad, format='%g')
             if ScalePlot.cbar_levels is None:
                 cbar.set_ticks(csf.levels)
             else:
@@ -147,7 +154,10 @@ class ScalePlot:
         if self.t is not None:
             print('time =', timeobj.strftime('%Y-%m-%d %H:%M:%S'))
 
-        var = sio.scale_read(self.nproc, self.rootgrps, self.dimdef, varname, time=time, it=it)[1]
+        dim, var = sio.scale_read(self.nproc, self.rootgrps, self.dimdef, varname, time=time, it=it)
 
-        figobj = self.xymap(var[z] * dscale, ax=ax)
+        if 'z' in dim:
+            figobj = self.xymap(var[z] * dscale, ax=ax)
+        else:
+            figobj = self.xymap(var * dscale, ax=ax)
         return figobj
