@@ -141,12 +141,25 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, time=None, it=None):
         return vardim, vardata
 
 
-def scale_write(nproc, rootgrps, scale_dimdef, varname, vardim, vardata, time=None, it=None):
+def scale_write(nproc, rootgrps, scale_dimdef, varname, vardata, time=None, it=None):
     """
     Write a variable to a set of partial scale I/O files.
 
     Can choose to write a single time or all times.
     """
+    # Check if the variable exists in the NetCDF file
+    if varname in rootgrps[0].variables:
+        vardim_in = rootgrps[0].variables[varname].dimensions
+    else:
+        raise IOError("Variable '" + varname + "' does not exist.")
+
+    vardim = []
+    for i, idiml in enumerate(scale_dimlist):
+        if i > 0 or (time == 'all' or it == 'all'):
+            for idim in vardim_in:
+                if idim in idiml:
+                    vardim.append(idim)
+
     varshape = []
     vardim_sub = []
     for idim in vardim:

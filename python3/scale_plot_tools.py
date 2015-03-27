@@ -59,6 +59,14 @@ class ScalePlot:
         sio.scale_close(self.rootgrps)
 
 
+    def readvar(self, varname, time=None, it=None):
+        return sio.scale_read(self.nproc, self.rootgrps, self.dimdef, varname, time=None, it=None)[1]
+
+
+    def writevar(self, varname, vardata, time=None, it=None):
+        sio.scale_write(self.nproc, self.rootgrps, self.dimdef, varname, vardata, time=None, it=None)
+
+
     def setvar(self, **kwargs):
         for key, value in list(kwargs.items()):
             if hasattr(ScalePlot, key):
