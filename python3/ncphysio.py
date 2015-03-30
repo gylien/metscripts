@@ -49,7 +49,7 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, time=None, it=None):
     time : number, optional
         Target time in physical time unit.
     it : int, optional
-        Target time index. Defalut to 0 if both `time` and `it` are not given.
+        Target time index. Defalut to 1 if both `time` and `it` are not given.
 
     Returns
     -------
@@ -86,15 +86,19 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, time=None, it=None):
         if time is not None:
             found = np.where(rootgrp.variables[dimname[0]][:] == time)[0]
             if len(found) == 0:
-                raise ValueError('Cannot find time = ' + str(time))
+                raise ValueError("Cannot find 'time' = " + str(time))
             else:
-                it = found[0]
+                it0 = found[0]
         elif it is None:
-            it = 0
-        if dimord[0] == 0:
-            vardata = rootgrp.variables[varname][it]
+            it0 = 0
+        elif it < 1 or it > len(rootgrp.dimensions['time']):
+            raise ValueError("Cannot find 'it' = " + str(it))
         else:
-            vardata = np.take(rootgrp.variables[varname][:], it, axis=dimord[0])
+            it0 = it - 1
+        if dimord[0] == 0:
+            vardata = rootgrp.variables[varname][it0]
+        else:
+            vardata = np.take(rootgrp.variables[varname][:], it0, axis=dimord[0])
     if '_FillValue' in rootgrp.variables[varname].ncattrs() and type(vardata) != ma.MaskedArray:
         vardata = ma.array(vardata, fill_value=rootgrp.variables[varname].getncattr('_FillValue'))
 
@@ -132,13 +136,13 @@ def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, tim
     vardim : dictionary
         Dimensions of the input variable data.
     vardata : ndarray or masked_array
-        Variable data in a ndarray or masked_array
+        Variable data to be written to the files.
     dimlist : array of array, optional
         List of dimensions in the NetCDF file. Default: `dimlist_default`
     time : number, optional
         Target time in physical time unit.
     it : int, optional
-        Target time index. Defalut to 0 if both `time` and `it` are not given.
+        Target time index. Defalut to 1 if both `time` and `it` are not given.
     """
     # Check if the variable exists in the NetCDF file
     if varname in rootgrp.variables:
@@ -165,9 +169,13 @@ def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, tim
                 if len(found) == 0:
                     raise ValueError('Cannot find time = ' + str(time))
                 else:
-                    it = found[0]
+                    it0 = found[0]
             elif it is None:
-                it = 0
+                it0 = 0
+            elif it < 1 or it > len(rootgrp.dimensions['time']):
+                raise ValueError("Cannot find 'it' = " + str(it))
+            else:
+                it0 = it - 1
         else:
             raise ValueError("Variable dimensions mismatch.")
     transaxes = [i for i in dimord if i is not None]
@@ -181,8 +189,8 @@ def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, tim
         rootgrp.variables[varname][:] = vardata
     else:
         if tdim == 0:
-            rootgrp.variables[varname][it] = vardata
+            rootgrp.variables[varname][it0] = vardata
         else:
             slice_obj = [slice(None)] * len(vardim_in)
-            slice_obj[tdim] = it
+            slice_obj[tdim] = it0
             rootgrp.variables[varname][slice_obj] = vardata
