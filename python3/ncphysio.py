@@ -49,7 +49,7 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, time=None, it=None):
     time : number, optional
         Target time in physical time unit.
     it : int, optional
-        Target time index. Defalut to 1 if both `time` and `it` are not given.
+        Target time index. Defalut to 0 if both `time` and `it` are not given.
 
     Returns
     -------
@@ -91,10 +91,10 @@ def ncphys_read(rootgrp, varname, dimlist=dimlist_default, time=None, it=None):
                 it0 = found[0]
         elif it is None:
             it0 = 0
-        elif it < 1 or it > len(rootgrp.dimensions['time']):
+        elif it < 0 or it >= len(rootgrp.dimensions['time']):
             raise ValueError("Cannot find 'it' = " + str(it))
         else:
-            it0 = it - 1
+            it0 = it
         if dimord[0] == 0:
             vardata = rootgrp.variables[varname][it0]
         else:
@@ -142,7 +142,7 @@ def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, tim
     time : number, optional
         Target time in physical time unit.
     it : int, optional
-        Target time index. Defalut to 1 if both `time` and `it` are not given.
+        Target time index. Defalut to 0 if both `time` and `it` are not given.
     """
     # Check if the variable exists in the NetCDF file
     if varname in rootgrp.variables:
@@ -172,10 +172,10 @@ def ncphys_write(rootgrp, varname, vardim, vardata, dimlist=dimlist_default, tim
                     it0 = found[0]
             elif it is None:
                 it0 = 0
-            elif it < 1 or it > len(rootgrp.dimensions['time']):
+            elif it < 0 or it >= len(rootgrp.dimensions['time']):
                 raise ValueError("Cannot find 'it' = " + str(it))
             else:
-                it0 = it - 1
+                it0 = it
         else:
             raise ValueError("Variable dimensions mismatch.")
     transaxes = [i for i in dimord if i is not None]

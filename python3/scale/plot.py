@@ -4,18 +4,25 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as pltcol
 import mpl_toolkits.basemap as bm
-#import scaleio as sio
+#from .io import ScaleIO
+
+
+__all__ = ['config', 'rc', 'contour_xy']
 
 
 config = {
-# shade/contour
+### shade/contour
 'shade': 'auto',    # None: No shade;   'auto': Yes, auto levels; array-like: Yes, given levels
 'shade_cmap': None,
 'shade_norm': None,
 'contour': None,    # None: No contour; 'auto': Yes, auto levels; array-like: Yes, given levels
 'contour_colors': 'gray',
+'contour_lwidth': None,
+'contour_label': True,
+#'contout_label_colors': None,
+#'contout_label_fsize': None,
 
-# projection/range/map
+### projection/range/map
 'proj': 'merc',
 'lonmin': None,
 'lonmax': None,
@@ -32,7 +39,10 @@ config = {
 'map_lwidth': 1.5,
 'map_lcolor': 'green',
 
-# label/misc
+### slice of data
+'slice': slice(None),
+
+### label/misc
 'title': None,
 'title_fsize': 16,
 'cbar_loc': 'bottom',
@@ -50,13 +60,15 @@ def rc(**kwargs):
             raise KeyError("'{0:s}' is not a configuration key.".format(key))
 
 
-def contour_xy(sio_obj, data, ax=None, **kwargs):
+def contour_xy(sio, data, ax=None, **kwargs):
     rc(**kwargs)
 
-    lonmin = np.min(sio_obj.lon) if config['lonmin'] is None else config['lonmin'] ## may have a bug when the plotting area is across lon=0
-    lonmax = np.max(sio_obj.lon) if config['lonmax'] is None else config['lonmax']
-    latmin = np.min(sio_obj.lat) if config['latmin'] is None else config['latmin']
-    latmax = np.max(sio_obj.lat) if config['latmax'] is None else config['latmax']
+    lon = sio.lon[config['slice']]
+    lat = sio.lat[config['slice']]
+    lonmin = np.min(lon) if config['lonmin'] is None else config['lonmin'] ## may have a bug when the plotting area is across lon=0
+    lonmax = np.max(lon) if config['lonmax'] is None else config['lonmax']
+    latmin = np.min(lat) if config['latmin'] is None else config['latmin']
+    latmax = np.max(lat) if config['latmax'] is None else config['latmax']
 
     if config['llint'] is None:
         d = max(lonmax - lonmin, latmax - latmin) / 5.
@@ -78,19 +90,21 @@ def contour_xy(sio_obj, data, ax=None, **kwargs):
     bmap.drawmeridians(np.arange(lon1, lon2, llint), labels=[0, 0, 0, 1])
     bmap.drawparallels(np.arange(lat1, lat2, llint), labels=[1, 0, 0, 0])
 
-    m_x, m_y = bmap(sio_obj.lon, sio_obj.lat)
+    m_x, m_y = bmap(lon, lat)
+
+    data_slice = data[config['slice']]
 
     csf = None
     cbar = None
     if config['shade'] == 'auto':
-        csf = bmap.contourf(m_x, m_y, data, cmap=config['shade_cmap'], norm=config['shade_norm'], extend='both')
+        csf = bmap.contourf(m_x, m_y, data_slice, cmap=config['shade_cmap'], norm=config['shade_norm'], extend='both')
     elif hasattr(config['shade'], '__iter__'):  # check if it is array-like
         if config['shade_norm'] is None:
-            csf = bmap.contourf(m_x, m_y, data, config['shade'], cmap=config['shade_cmap'],
+            csf = bmap.contourf(m_x, m_y, data_slice, config['shade'], cmap=config['shade_cmap'],
                                 norm=pltcol.BoundaryNorm([-float('inf')] + list(config['shade']) + [float('inf')],
                                 config['shade_cmap'].N), extend='both')
         else:
-            csf = bmap.contourf(m_x, m_y, data, config['shade'], cmap=config['shade_cmap'], norm=config['shade_norm'], extend='both')
+            csf = bmap.contourf(m_x, m_y, data_slice, config['shade'], cmap=config['shade_cmap'], norm=config['shade_norm'], extend='both')
     if csf is not None:
         cbar = bmap.colorbar(csf, location=config['cbar_loc'], pad=config['cbar_pad'], format='%g')
         if config['cbar_levels'] is None:
@@ -102,9 +116,12 @@ def contour_xy(sio_obj, data, ax=None, **kwargs):
 
     cs = None
     if config['contour'] == 'auto':
-        cs = bmap.contour(m_x, m_y, data, colors=config['contour_colors'])
+        cs = bmap.contour(m_x, m_y, data_slice, colors=config['contour_colors'], linewidths=config['contour_lwidth'])
     elif hasattr(config['contour'], '__iter__'):  # check if it is array-like
-        cs = bmap.contour(m_x, m_y, data, config['contour'], colors=config['contour_colors'])
+        cs = bmap.contour(m_x, m_y, data_slice, config['contour'], colors=config['contour_colors'], linewidths=config['contour_lwidth'])
+    if cs is not None:
+        if config['contour_label'] is not None:
+            cs.clabel(inline=True, fmt='%g')
 
     if config['title'] is not None:
         if ax is None:

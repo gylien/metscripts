@@ -1,9 +1,15 @@
 import numpy as np
 import numpy.ma as ma
-from ncphysio import *
-from netCDF4 import Dataset
+import ncphysio
 import os.path
 import datetime as dt
+from netCDF4 import Dataset
+
+
+__all__ = ['scale_dimlist', 'scale_dimlist_g', 'scale_file_suffix', 'scale_time_0',
+           'scale_open', 'scale_close', 'scale_gettime', 'scale_puttime',
+           'scale_read', 'scale_write', 'ScaleIO']
+
 
 scale_dimlist = [
 ['time', 'time1'],
@@ -88,7 +94,7 @@ def scale_open(basename, mode='r', scale_dimdef=None):
         ip += 1
     nproc = ip
 
-#    dimlen = ncphys_read_dimlen(rootgrps[0], dimlist=scale_dimlist)
+#    dimlen = ncphysio.ncphys_read_dimlen(rootgrps[0], dimlist=scale_dimlist)
     dimlen = {}
     for idiml in scale_dimlist:
         for idim in idiml:
@@ -201,7 +207,7 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
     else:
         raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
 
-    vardim, vardata_0 = ncphys_read(rootgrps[0], varname, dimlist=scale_dimlist, time=time, it=it)
+    vardim, vardata_0 = ncphysio.ncphys_read(rootgrps[0], varname, dimlist=scale_dimlist, time=time, it=it)
     varshape = []
     vardim_sub = []
     for idim in vardim:
@@ -233,7 +239,7 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
             if ip == 0:
                 vardata[slice_obj] = vardata_0
             else:
-                vardim, vardata[slice_obj] = ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist, time=time, it=it)
+                vardim, vardata[slice_obj] = ncphysio.ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist, time=time, it=it)
         return vardim, vardata
 
 
@@ -302,7 +308,7 @@ def scale_write(nproc, rootgrps, scale_dimdef, varname, vardata, t=None):
 #                                     scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim])
                 slice_obj[i] = slice(scale_dimdef['start'][idim][ip],
                                      scale_dimdef['start'][idim][ip] + scale_dimdef['len'][idim][ip])
-        ncphys_write(rootgrps[ip], varname, vardim, vardata[slice_obj], dimlist=scale_dimlist, time=time, it=it)
+        ncphysio.ncphys_write(rootgrps[ip], varname, vardim, vardata[slice_obj], dimlist=scale_dimlist, time=time, it=it)
 
 
 class ScaleIO:
@@ -333,6 +339,7 @@ class ScaleIO:
             for it in range(len(time_array)):
                 self.t[it] = scale_gettime(time_array[it])
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
+        self.zh = scale_read(self.nproc, self.rootgrps, self.dimdef, 'zh')[1]
         self.lon = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lon')[1]
         self.lat = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lat')[1]
 
