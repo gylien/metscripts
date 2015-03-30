@@ -48,6 +48,7 @@ def interp_z(sio, var, height=None):
         height0 = sio.readvar('height')
     else:
         height0 = height
+    height0[0,:,:] -= 1.e-2
 
     varout = ma.masked_all((sio.dimdef['len']['z'][0], var.shape[1], var.shape[2]), dtype=var.dtype)
     if type(var) == ma.MaskedArray:
