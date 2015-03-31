@@ -51,7 +51,7 @@ def writegrads(fo, data, varid, nv3d=0, nv2d=0, t=1, e=1, nx=1, ny=1, nz=1, nt=1
         if data.dtype == np.dtype('>f4') or data.dtype == np.dtype('<f4'):
             data.byteswap(True)
         else:
-            warnings.warn('Data type conversion from {:s} to {:s}.'.format(data.dtype, dtyp))
+            warnings.warn('Data type conversion from {0:s} to {1:s}.'.format(str(data.dtype), str(dtyp)))
             data = data.astype(dtyp)
 
     fo.seek(4*vstart)

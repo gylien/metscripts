@@ -129,5 +129,4 @@ def contour_xy(sio, data, ax=None, **kwargs):
         else:
             ax.set_title(config['title'], fontsize=config['title_fsize'])
 
-    figobj = {'bmap': bmap, 'csf': csf, 'cs': cs, 'cbar': cbar}
-    return figobj
+    return {'bmap': bmap, 'csf': csf, 'cs': cs, 'cbar': cbar}

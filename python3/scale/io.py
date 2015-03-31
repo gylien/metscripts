@@ -253,13 +253,13 @@ def scale_write(nproc, rootgrps, scale_dimdef, varname, vardata, t=None):
     nproc : integer
         Number of split SCALE files
     rootgrps : array of netcdf4-python Dataset instance
-        Array of netcdf4-python Dataset instances of the split SCALE files.
+        Array of netcdf4-python Dataset instances of the split SCALE files
     scale_dimdef : dictionary
         Summary of dimensions in the split SCALE files
     varname : string
         The variable name.
     vardata : ndarray or masked_array
-        Variable data to be written to the files.
+        Variable data to be written to the files
     t : int or <datetime.datetime> class or None, optional
         Time to read. None for all times. Defalut: None
     """
@@ -325,8 +325,10 @@ class ScaleIO:
         ----------
         basename : string
             Split SCALE file basename. Path can be included.
-        mode : string, optional
-            File I/O mode: `r` for read and `r+` for read/write. Default: `r`
+        mode : {'r', 'r+'}, optional
+            File I/O mode
+            * 'r' -- read (default)
+            * 'r+' -- read/write
         """
         self.nproc, self.rootgrps, self.dimdef = scale_open(basename, mode)
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
@@ -357,7 +359,8 @@ class ScaleIO:
         varname : string
             The variable name.
         t : int or <datetime.datetime> class or None, optional
-            Time to read. None for all times. Defalut: None
+            Time to read
+            * None -- all times (defalut)
 
         Returns
         -------
