@@ -2,7 +2,7 @@ import numpy as np
 import numpy.ma as ma
 
 
-__all__ = ['calc_height', 'interp_z', 'calc_destagger', 'calc_pt', 'calc_uvw']
+__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_pt', 'calc_uvw', 'calc_ref']
 
 
 def calc_height(sio, topo=None):
@@ -50,7 +50,7 @@ def interp_z(sio, var, height=None, t=None):
     var : 3-D ndarray
         Input variable
     height : 3-D ndarray, optional
-        Height in current grids. Read from files if not given
+        Height in current grids (m). Read from files if not given
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
@@ -66,21 +66,59 @@ def interp_z(sio, var, height=None, t=None):
         height0 = height
     height0[0,:,:] -= 1.e-2
 
-    varout = ma.masked_all((sio.dimdef['len']['z'][0], var.shape[1], var.shape[2]), dtype=var.dtype)
+    varshape = list(var.shape)
+    varshape[0] = sio.dimdef['len']['z'][0]
+    varout = ma.masked_all(varshape, dtype=var.dtype)
     if type(var) == ma.MaskedArray:
         varout.fill_value = var.fill_value
 
-    for j in range(var.shape[1]):
-        for i in range(var.shape[2]):
-            varout[:,j,i] = np.interp(sio.z, height0[:,j,i], var[:,j,i], left=-9.9999e+30, right=-9.9999e+30)
-    varout.mask = [varout == -9.9999e+30]
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            varout[:,j,i] = np.interp(sio.z, height0[:,j,i], var[:,j,i], left=-9.99e+33, right=-9.99e+33)
+    varout.mask[varout == -9.99e+33] = True
 
     return varout
 
 
-#def interp_p(sio, var, p=None):
-#    """
-#    Interpolate a 3-D variable to constant p levels
+def interp_p(sio, var, plevels, p=None, t=None):
+    """
+    Interpolate a 3-D variable to constant p levels
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    var : 3-D ndarray
+        Input variable
+    plevels : 1-D ndarray
+        Targeted pressure levels (Pa)
+    p : 3-D ndarray, optional
+        Pressure in current grids (Pa). Read from files if not given
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+
+    Returns
+    -------
+    varout : 3-D ndarray
+        Interpolated variable
+    """
+    if p is None:
+        p0, = calc_pt(sio, tout=False, thetaout=False, t=t)
+    else:
+        p0 = p
+    varshape = list(var.shape)
+    varshape[0] = len(plevels)
+    varout = ma.masked_all(varshape, dtype=var.dtype)
+    if type(var) == ma.MaskedArray:
+        varout.fill_value = var.fill_value
+
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), var[::-1,j,i], left=-9.99e+33, right=-9.99e+33)
+    varout.mask[varout == -9.99e+33] = True
+
+    return varout
 
 
 def calc_destagger(var, axis=0, first_grd=False):
@@ -271,3 +309,63 @@ def calc_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, fir
     w[0,:,:] = 0.
 
     return u, v, w
+
+
+def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
+    """
+    Calculate radar reflectivity
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    rho : 3-D ndarray, optional
+        Density (kg/m3). Read from files if not given
+    qr : 3-D ndarray, optional
+        Rain water mixing ratio (kg/kg). Read from files if not given
+    qs : 3-D ndarray, optional
+        Snow mixing ratio (kg/kg). Read from files if not given
+    qg : 3-D ndarray, optional
+        Graupel mixing ratio (kg/kg). Read from files if not given
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+
+    Returns
+    -------
+    dbz : 3-D ndarray
+        Radar reflectivity (dBZ)
+    max_dbz : 2-D ndarray
+        Maximum radar reflectivity in vertical (dBZ)
+    """
+    if rho is None:
+        rho0 = sio.readvar('DENS', t=t)[:,2:-2,2:-2]
+    else:
+        rho0 = rho
+    if qr is None:
+        qr0 = sio.readvar('QR', t=t)[:,2:-2,2:-2]
+    else:
+        qr0 = qr
+    if qs is None:
+        qs0 = sio.readvar('QS', t=t)[:,2:-2,2:-2]
+    else:
+        qs0 = qs
+    if qg is None:
+        qg0 = sio.readvar('QG', t=t)[:,2:-2,2:-2]
+    else:
+        qg0 = qg
+
+    qr0[qr0 < 0.] = 0.
+    qs0[qs0 < 0.] = 0.
+    qg0[qg0 < 0.] = 0.
+    ref = 2.53e4 * (rho0 * qr0 * 1.0e3) ** 1.84 \
+        + 3.48e3 * (rho0 * qs0 * 1.0e3) ** 1.66 \
+        + 8.18e4 * (rho0 * qg0 * 1.0e3) ** 1.50
+    dbz = 10. * np.log10(ref)
+    max_dbz = ma.max(dbz, axis=0)
+
+    min_dbz = -20.
+    dbz[dbz < min_dbz] = min_dbz
+    max_dbz[max_dbz < min_dbz] = min_dbz
+
+    return dbz, max_dbz
