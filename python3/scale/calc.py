@@ -151,17 +151,18 @@ def calc_destagger(var, axis=0, first_grd=False):
     else:
         varout = np.empty(varshape, dtype=var.dtype)
 
-    slice_obj = [slice(None)] * var.ndim
+    slice_obj_1 = [slice(None)] * var.ndim
+    slice_obj_2 = [slice(None)] * var.ndim
     if first_grd:
-        for i in range(varshape[axis]):
-            slice_obj[axis] = i
-            varout[slice_obj] = 0.5 * (var.take(i, axis=axis) + var.take(i+1, axis=axis))
+        slice_obj_1[axis] = slice(0, varshape[axis])
+        slice_obj_2[axis] = slice(1, varshape[axis]+1)
+        varout = 0.5 * (var[slice_obj_1] + var[slice_obj_2])
     else:
-        slice_obj[axis] = 0
-        varout[slice_obj] = var.take(0, axis=axis)
-        for i in range(1, varshape[axis]):
-            slice_obj[axis] = i
-            varout[slice_obj] = 0.5 * (var.take(i-1, axis=axis) + var.take(i, axis=axis))
+        slice_obj_1[axis] = 0
+        varout[slice_obj_1] = var[slice_obj_1]
+        slice_obj_1[axis] = slice(0, varshape[axis]-1)
+        slice_obj_2[axis] = slice(1, varshape[axis])
+        varout[slice_obj_2] = 0.5 * (var[slice_obj_1] + var[slice_obj_2])
 
     return varout
 
@@ -300,15 +301,19 @@ def calc_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, fir
         momz0 = momz
 
     if destagger:
+#        print(' --- destagger momx')
         momx0 = calc_destagger(momx0, axis=2, first_grd=first_grd)
+#        print(' --- destagger momy')
         momy0 = calc_destagger(momy0, axis=1, first_grd=first_grd)
+#        print(' --- destagger momz')
         momz0 = calc_destagger(momz0, axis=0, first_grd=False)
+    momz0[0,:,:] = 0.
+
     u = momx0 / rho0
     v = momy0 / rho0
     w = momz0 / rho0
-    w[0,:,:] = 0.
 
-    return u, v, w
+    return u, v, w, momx0, momy0, momz0
 
 
 def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
@@ -355,9 +360,9 @@ def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
     else:
         qg0 = qg
 
-    qr0[qr0 < 0.] = 0.
-    qs0[qs0 < 0.] = 0.
-    qg0[qg0 < 0.] = 0.
+    qr0[qr0 < 1.e-10] = 1.e-10
+    qs0[qs0 < 1.e-10] = 1.e-10
+    qg0[qg0 < 1.e-10] = 1.e-10
     ref = 2.53e4 * (rho0 * qr0 * 1.0e3) ** 1.84 \
         + 3.48e3 * (rho0 * qs0 * 1.0e3) ** 1.66 \
         + 8.18e4 * (rho0 * qg0 * 1.0e3) ** 1.50
