@@ -1,5 +1,5 @@
 import numpy as np
-#import numpy.ma as ma
+import numpy.ma as ma
 import datetime as dt
 from .io import ScaleIO
 from .calc import *
@@ -31,15 +31,13 @@ var_3d = {
 }
 var_2d = {
 'topo': 'Topography height (m)',
-'max_dbz': 'Maximum radar reflectivity (dBZ)'
+'max_dbz': 'Maximum radar reflectivity (dBZ)',
+'slp': 'Sea level pressure (Pa)' ##### not yet implemented!!!
 }
 
 varout_3d = ['u', 'v', 'w', 'p', 't', 'theta', 'rho', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz']
-#
-#
 varout_2d = ['topo', 'max_dbz']
-#
-# slp
+
 plevels = [100000., 92500., 85000., 70000., 50000., 30000., 20000., 10000., 5000., 2000., 1000.]
 
 proj = {
@@ -78,6 +76,7 @@ def convert(basename, basename_topo=None, ftype='restart', gradsfile='out', t=dt
     print()
 
     var = {}
+    var_itp = {}
     if basename_topo is None:
         var['topo'] = sio.readvar('TOPO')[2:-2,2:-2]
     else:
@@ -108,7 +107,7 @@ def convert(basename, basename_topo=None, ftype='restart', gradsfile='out', t=dt
                 height, height_h = calc_height(sio, topo=var['topo'])
                 for ivar in varout_3d:
                     print('Vertical interpolation at Z-coordinate: ', ivar)
-                    var[ivar] = interp_z(sio, var[ivar], height=height, t=it)
+                    var_itp[ivar] = interp_z(sio, var[ivar], height=height, t=it)
         elif ftype == 'history':
             print("Not finished...")
         else:
@@ -116,16 +115,23 @@ def convert(basename, basename_topo=None, ftype='restart', gradsfile='out', t=dt
 
         if vcoor == 'p':
             for ivar in varout_3d:
-                print('Vertical interpolation at P-coordinate: ', ivar)
-                interp_p(sio, var[ivar], plevels, p=var['p'], t=it)
+                if ivar == 'p':
+                    varshape = list(var[ivar].shape)
+                    varshape[0] = len(plevels)
+                    var_itp[ivar] = ma.masked_all(varshape, dtype=var[ivar].dtype)
+                    for ilev in range(len(plevels)):
+                        var_itp[ivar][ilev] = plevels[ilev]
+                else:
+                    print('Vertical interpolation at P-coordinate: ', ivar)
+                    var_itp[ivar] = interp_p(sio, var[ivar], plevels, p=var['p'], t=it)
 
 
         for iv, ivar in enumerate(varout_3d):
-            gradsio.writegrads(f, var[ivar].filled(fill_value=missing), iv+1,
-                               nv3d=len(varout_3d), nv2d=len(varout_2d), t=it+1, nx=nx, ny=ny, nz=nz, nt=nt)
+            gradsio.writegrads(f, var_itp[ivar].filled(fill_value=missing), iv+1,
+                               nv3d=len(varout_3d), nv2d=len(varout_2d), t=it+1, nx=nx, ny=ny, nz=nzout, nt=nt)
         for iv, ivar in enumerate(varout_2d):
             gradsio.writegrads(f, var[ivar].filled(fill_value=missing), len(varout_3d)+iv+1,
-                               nv3d=len(varout_3d), nv2d=len(varout_2d), t=it+1, nx=nx, ny=ny, nz=nz, nt=nt)
+                               nv3d=len(varout_3d), nv2d=len(varout_2d), t=it+1, nx=nx, ny=ny, nz=nzout, nt=nt)
 
     f.close()
 
