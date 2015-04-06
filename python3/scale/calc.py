@@ -116,6 +116,11 @@ def interp_p(sio, var, plevels, p=None, t=None):
     for j in range(varshape[1]):
         for i in range(varshape[2]):
             varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), var[::-1,j,i], left=-9.99e+33, right=-9.99e+33)
+#            print(p0[::-1,j,i])
+#            print(var[::-1,j,i])
+#            import sys
+#            sys.exit()
+#            varout[:,j,i] = np.interp(plevels, p0[::-1,j,i], var[::-1,j,i], left=-9.99e+33, right=-9.99e+33)
     varout.mask[varout == -9.99e+33] = True
 
     return varout
