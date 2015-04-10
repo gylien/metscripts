@@ -15,7 +15,7 @@ config = {
 'missing': -9.99e33,
 'vcoor': 'p',
 'plevels': [100000., 92500., 85000., 70000., 50000., 30000., 20000., 10000., 5000., 2000., 1000.],
-'varout_3d': ['u', 'v', 'w', 'p', 't', 'theta', 'rho', 'momx', 'momy', 'momz', 'rhot', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'],
+'varout_3d': ['u', 'v', 'w', 'p', 'temp', 'theta', 'rho', 'momx', 'momy', 'momz', 'rhot', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'],
 'varout_2d': ['topo', 'max_dbz'],
 'proj': {'type': 'LC',
          'basepoint_lon': 136.,
@@ -44,7 +44,7 @@ var_3d = {
 'v': 'v-wind (m/s)',
 'w': 'w-wind (m/s)',
 'p': 'Pressure (Pa)',
-'t': 'Temperature (K)',
+'temp': 'Temperature (K)',
 'theta': 'Potential temperature (K)',
 'rho': 'Density (kg/m^3)',
 'momx': 'x-momentum (kg/m2/s)',
@@ -71,7 +71,8 @@ var_2d = {
 def rc(**kwargs):
     for key, value in list(kwargs.items()):
         if key in config:
-            config[key] = value
+            if value != '-':
+                config[key] = value
         else:
             raise KeyError("'{0:s}' is not a configuration key.".format(key))
 
@@ -141,7 +142,7 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             print('Calculate: qhydro')
             var['qhydro'] = var['qc'] + var['qr'] + var['qi'] + var['qs'] + var['qg']
             print('Calculate: p, t, theta')
-            var['p'], var['t'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
+            var['p'], var['temp'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
             if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
                 print('Calculate: dbz, max_dbz')
                 var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
@@ -155,7 +156,7 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
                     var_itp[ivar] = interp_z(sio, var[ivar], height=var['z'], t=it)
 
         elif config['ftype'] == 'restart_sprd':
-            for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('t', 'MOMZ'), ('p', 'RHOT'), \
+            for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('temp', 'MOMZ'), ('p', 'RHOT'), \
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
                 if ivar in config['varout_3d']:
                     print('Read variable: ' + ivarf)
@@ -173,7 +174,7 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
         elif config['ftype'] == 'history':
             for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), \
-                               ('u', 'U'), ('v', 'V'), ('w', 'W'), ('t', 'T'), ('p', 'PRES'), ('theta', 'PT'):
+                               ('u', 'U'), ('v', 'V'), ('w', 'W'), ('temp', 'T'), ('p', 'PRES'), ('theta', 'PT'):
                 if ivar in config['varout_3d']:
                     print('Read variable: ' + ivarf)
                     var[ivar] = sio.readvar(ivarf, t=it)
@@ -216,10 +217,8 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             if ivar in var_out:
                 varout_3d_final.append(ivar)
         for ivar in config['varout_2d']:
-            if ivar in var_out:
+            if ivar in var:  # always look for 'var' (instead of 'var_out') for 2D variables
                 varout_2d_final.append(ivar)
-
-        print(var_out['u'].shape), nzout, ny, nx
 
         for iv, ivar in enumerate(varout_3d_final):
             print('Write 3D variable: {:s}'.format(ivar))
@@ -234,9 +233,9 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
         for iv, ivar in enumerate(varout_2d_final):
             print('Write 2D variable: {:s}'.format(ivar))
             if type(var[ivar]) == ma.MaskedArray:
-                varf = var_out[ivar].filled(fill_value=config['missing'])
+                varf = var[ivar].filled(fill_value=config['missing'])  # always look for 'var' (instead of 'var_out') for 2D variables
             else:
-                varf = var_out[ivar]
+                varf = var[ivar]
             gradsio.writegrads(f, varf, len(varout_3d_final)+iv+1,
                                nv3d=len(varout_3d_final), nv2d=len(varout_2d_final), t=it+1, nx=nx, ny=ny, nz=nzout, nt=nt)
 
