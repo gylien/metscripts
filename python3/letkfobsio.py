@@ -4,6 +4,8 @@ import struct
 obsrecords = {
 'speedy': {'names':['elm','lon','lat','lev','dat','err'],
            'formats':['i4','f4','f4','f4','f4','f4']},
+'speedy2': {'names':['elm','lon','lat','lev','dat','err','ohx','oqc'],
+           'formats':['i4','f4','f4','f4','f4','f4','f4','i4']},
 'gfs':    {'names':['elm','lon','lat','lev','dat','err','typ'],
            'formats':['i4','f4','f4','f4','f4','f4','i4']},
 'gfs2':   {'names':['elm','lon','lat','lev','dat','err','typ','tdf','ohx','oqc'],

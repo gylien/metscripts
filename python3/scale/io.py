@@ -63,9 +63,9 @@ def scale_open(basename, mode='r', scale_dimdef=None):
     ncfile = basename + scale_file_suffix.format(0)
     if not os.path.isfile(ncfile):
         if mode == 'r':
-            raise IOError('File does not exist.')
+            raise IOError("File does not exist... basename = '" + basename + "'")
         elif scale_dimdef is None:
-            raise IOError('File does not exist.')
+            raise IOError("File does not exist... basename = '" + basename + "'")
         else:
 #            scale_create_new(basename, scale_dimdef)
             raise IOError('Scale_create has not been supported yet...')
@@ -347,7 +347,10 @@ class ScaleIO:
 
 
     def __del__(self):
-        scale_close(self.rootgrps)
+        try:
+            scale_close(self.rootgrps)
+        except:
+            pass
 
 
     def readvar(self, varname, t=None):

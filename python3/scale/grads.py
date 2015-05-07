@@ -18,26 +18,13 @@ config = {
 'varout_3d': ['u', 'v', 'w', 'p', 'temp', 'theta', 'rho', 'momx', 'momy', 'momz', 'rhot', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'],
 'varout_2d': ['topo', 'max_dbz'],
 'proj': {'type': 'LC',
-         'basepoint_lon': 136.,
-         'basepoint_lat': 36.,
-         'LC_lat1': 30.0,
-         'LC_lat2': 42.0,}
+         'basepoint_lon': 135.,
+         'basepoint_lat': 35.,
+         'LC_lat1': 30.,
+         'LC_lat2': 40.,}
+'extrap': True
+'lprate': 0.005
 }
-
-#proj = {
-#'type': 'LC',
-#'basepoint_lon': 135.220404,
-#'basepoint_lat': 34.653396,
-#'LC_lat1': 30.0,
-#'LC_lat2': 40.0,
-#}
-#proj = {
-#'type': 'LC',
-#'basepoint_lon': 135.52,
-#'basepoint_lat': 34.82,
-#'LC_lat1': 34.52,
-#'LC_lat2': 35.12,
-#}
 
 var_3d = {
 'u': 'u-wind (m/s)',
