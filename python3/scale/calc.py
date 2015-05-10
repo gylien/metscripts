@@ -2,7 +2,8 @@ import numpy as np
 import numpy.ma as ma
 
 
-__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_pt', 'calc_uvw', 'calc_ref']
+__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_pt', 'calc_uvw', 
+           'calc_ref', 'extrap_z_t0', 'extrap_z_pt', 'extrap_p_zt', 'calc_slp', 'calc_rhosfc_psfc']
 
 
 def calc_height(sio, topo=None):
@@ -39,7 +40,7 @@ def calc_height(sio, topo=None):
     return height, height_h
 
 
-def interp_z(sio, var, height=None, t=None):
+def interp_z(sio, var, height=None, t=None, extrap=False):
     """
     Interpolate a 3-D variable to constant z levels
 
@@ -54,6 +55,10 @@ def interp_z(sio, var, height=None, t=None):
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    extrap : bool, optional
+        Extrapolate low values?
+        * True -- do extrapolation
+        * False -- do not do extrapolation (default)
 
     Returns
     -------
@@ -74,13 +79,17 @@ def interp_z(sio, var, height=None, t=None):
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
-            varout[:,j,i] = np.interp(sio.z, height0[:,j,i], var[:,j,i], left=-9.99e+33, right=-9.99e+33)
+            if extrap:
+                varout[:,j,i] = np.interp(sio.z, np.copy(height0[:,j,i]), np.copy(var[:,j,i]), right=-9.99e+33)
+#                varout[:,j,i] = np.interp(sio.z, height0[:,j,i], var[:,j,i], right=-9.99e+33)
+            else:
+                varout[:,j,i] = np.interp(sio.z, np.copy(height0[:,j,i]), np.copy(var[:,j,i]), left=-9.99e+33, right=-9.99e+33)
     varout.mask[varout == -9.99e+33] = True
 
     return varout
 
 
-def interp_p(sio, var, plevels, p=None, t=None):
+def interp_p(sio, var, plevels, p=None, t=None, extrap=False):
     """
     Interpolate a 3-D variable to constant p levels
 
@@ -97,6 +106,10 @@ def interp_p(sio, var, plevels, p=None, t=None):
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    extrap : bool, optional
+        Extrapolate low values?
+        * True -- do extrapolation
+        * False -- do not do extrapolation (default)
 
     Returns
     -------
@@ -115,12 +128,10 @@ def interp_p(sio, var, plevels, p=None, t=None):
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
-            varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), var[::-1,j,i], left=-9.99e+33, right=-9.99e+33)
-#            print(p0[::-1,j,i])
-#            print(var[::-1,j,i])
-#            import sys
-#            sys.exit()
-#            varout[:,j,i] = np.interp(plevels, p0[::-1,j,i], var[::-1,j,i], left=-9.99e+33, right=-9.99e+33)
+            if extrap:
+                varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), np.copy(var[::-1,j,i]), left=-9.99e+33)
+            else:
+                varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), np.copy(var[::-1,j,i]), left=-9.99e+33, right=-9.99e+33)
     varout.mask[varout == -9.99e+33] = True
 
     return varout
@@ -244,7 +255,6 @@ def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=
         res.append(theta)
 
     return res
-
 
 
 def calc_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, first_grd=True, t=None):
@@ -379,3 +389,199 @@ def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
     max_dbz[max_dbz < min_dbz] = min_dbz
 
     return dbz, max_dbz
+
+
+def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
+    """
+    Calculate smoothed lowest-level surface temperature extrapolated from 
+    the free atmosphere
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    temp : 3-D ndarray
+        Input temperature (K)
+    lprate : float, optional
+        Assumed lapse rate (K/m). Default: 0.005
+    zfree : float,optional
+        Reference height of free atmosphere above the surface (m).
+        Default: 1000.
+    height : 3-D ndarray, optional
+        Height in current grids (m). Read from files if not given
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+
+    Returns
+    -------
+    t0_ext : 2-D ndarray
+        Smoothed lowest-level temperature extrapolated from the free atmosphere (K)
+    """
+    if height is None:
+        height0 = sio.readvar('height', t=t)[:,2:-2,2:-2]
+    else:
+        height0 = height
+#    height0[0,:,:] -= 1.e-2
+
+    varshape = list(temp.shape)
+    t0_ext = np.zeros(varshape[1:3], dtype=temp.dtype)
+
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            t_ref = np.interp(height0[0,j,i]+zfree, np.copy(height0[:,j,i]), np.copy(temp[:,j,i]))
+            t0_ext[j,i] = t_ref + lprate * zfree
+    return t0_ext
+
+
+def extrap_z_pt(sio, pres, temp, theta, rho, rhot, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None):
+    """
+    Calculate extrapolated 3-D variables under the surface
+    """
+    g = 9.80665
+    Rdry = 287.04
+    Rvap = 461.46
+    CVdry = 717.60
+    PRE00 = 100000.0
+
+    Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
+    RovCP = Rtot / (CVdry + Rtot)
+
+    varshape = list(pres.shape)
+
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            for k in range(varshape[0]):
+                if sio.z[k] <= height[0,j,i]:
+                    temp[k,j,i] = t0_ext[j,i] + lprate * (height[0,j,i] - sio.z[k])
+                    pres[k,j,i] = p0[j,i] * (temp[k,j,i] / t0_ext[j,i]) ** (g/Rtot[j,i]/lprate)
+                    theta[k,j,i] = temp[k,j,i] * (PRE00 / pres[k,j,i]) ** RovCP[j,i]
+                    rho[k,j,i] = pres[k,j,i] / (Rtot[j,i] * temp[k,j,i])
+                    rhot[k,j,i] = rho[k,j,i] * theta[k,j,i]
+    return
+
+
+def extrap_p_zt(sio, z, temp, theta, rho, rhot, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=None):
+    """
+    Calculate extrapolated 3-D variables under the surface
+    """
+    g = 9.80665
+    Rdry = 287.04
+    Rvap = 461.46
+    CVdry = 717.60
+    PRE00 = 100000.0
+
+    Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
+    RovCP = Rtot / (CVdry + Rtot)
+
+    varshape = list(z.shape)
+
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            for k in range(varshape[0]):
+                if plevels[k] >= p[0,j,i]:
+                    temp[k,j,i] = t0_ext[j,i] * (plevels[k] / p[0,j,i]) ** (Rtot[j,i]*lprate/g)
+                    z[k,j,i] = height[0,j,i] + t0_ext[j,i]/lprate * (1. - (plevels[k]/p[0,j,i]) ** (Rtot[j,i]*lprate/g))
+                    theta[k,j,i] = temp[k,j,i] * (PRE00 / plevels[k]) ** RovCP[j,i]
+                    rho[k,j,i] = plevels[k] / (Rtot[j,i] * temp[k,j,i])
+                    rhot[k,j,i] = rho[k,j,i] * theta[k,j,i]
+    return
+
+
+def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None):
+    """
+    Calculate extrapolated 3-D variables under the surface
+    """
+    g = 9.80665
+    Rdry = 287.04
+    Rvap = 461.46
+    PRE00 = 100000.0
+
+    Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
+
+    varshape = list(qv.shape)
+    slp = np.zeros(varshape[1:3], dtype=qv.dtype)
+
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            slp[j,i] = p0[j,i] * (1 + lprate * height[0,j,i] / t0_ext[j,i]) ** (g/Rtot[j,i]/lprate)
+    return slp
+
+
+def lagrange_interp(x, xp, fp):
+    """
+    """
+    res = ((x-xp[1]) * (x-xp[2])) / ((xp[0]-xp[1]) * (xp[0]-xp[2])) * fp[0] \
+        + ((x-xp[0]) * (x-xp[2])) / ((xp[1]-xp[0]) * (xp[1]-xp[2])) * fp[1] \
+        + ((x-xp[0]) * (x-xp[1])) / ((xp[2]-xp[0]) * (xp[2]-xp[1])) * fp[2]
+    return res
+
+
+def calc_rhosfc_psfc(sio, rho, pres, height, topo, t=None):
+    """
+    """
+    g = 9.80665
+
+    varshape = list(rho.shape)
+    rhosfc = np.zeros(varshape[1:3], dtype=rho.dtype)
+    psfc = np.zeros(varshape[1:3], dtype=rho.dtype)
+
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            rhosfc[j,i] = lagrange_interp(topo[j,i], height[:,j,i], rho[:,j,i])
+            psfc[j,i] = pres[0,j,i] + 0.5 * (rhosfc[j,i] + rho[0,j,i]) * g * (height[0,j,i] - topo[j,i])
+    return rhosfc, psfc
+
+
+#subroutine getgph (km, dp, tv, ps, orog, gph, pstag)
+#!-------------------------------------------------------------------------------
+
+#  implicit none
+
+#  integer, intent(in)       :: km
+#  real(r_sngl), intent(in)  :: dp(km), tv(km)
+#  real(r_sngl), intent(in)  :: ps, orog
+#  real(r_sngl), intent(out) :: gph(km+1)
+#  real(r_sngl), intent(out) :: pstag(km+1)
+#  integer :: k
+
+#!-------------------------------------------------------------------------------
+
+#  gph(1) = orog
+#  pstag(1) = ps
+#  do k = 1, km-1
+#    pstag(k+1) = pstag(k) - dp(k)
+#    gph(k+1) = gph(k) + con_rog * tv(k) * log(pstag(k) / pstag(k+1))
+#  enddo
+#  pstag(km+1) = 0.
+#  gph(km+1) = 9.99e33
+
+#!-------------------------------------------------------------------------------
+#end subroutine getgph
+
+
+
+#subroutine getrh (km, p, sh, t, rh)
+#!-------------------------------------------------------------------------------
+
+#  implicit none
+
+#  integer, intent(in)  :: km
+#  real(r_sngl), intent(in)  :: p(km), sh(km), t(km)
+#  real(r_sngl), intent(out) :: rh(km)
+#  real(r_sngl) :: tr, es, shs
+#  integer :: k
+
+#!-------------------------------------------------------------------------------
+
+#  do k = 1, km
+#    tr = con_ttp / t(k)
+#    es = con_psat * (tr**con_xpona) * exp(con_xponb*(1.-tr))
+#    es = min(es, p(k))
+#    shs = con_eps * es / (p(k) + con_epsm1 * es)
+#    rh(k) = 1.e2 * min(max(sh(k)/shs, 0.), 1.)
+#!    rh(k) = 1.e2 * sh(k) / shs
+#  enddo
+
+#!-------------------------------------------------------------------------------
+#end subroutine getrh

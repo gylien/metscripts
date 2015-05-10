@@ -10,7 +10,7 @@ __all__ = ['letkfout_grads']
 
 def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timedelta(hours=6),
                    outtype='all', member='all',
-                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-'):
+                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-', extrap='-'):
     """
     """
     if etime is None:

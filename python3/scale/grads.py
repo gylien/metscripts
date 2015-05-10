@@ -15,14 +15,14 @@ config = {
 'missing': -9.99e33,
 'vcoor': 'p',
 'plevels': [100000., 92500., 85000., 70000., 50000., 30000., 20000., 10000., 5000., 2000., 1000.],
-'varout_3d': ['u', 'v', 'w', 'p', 'temp', 'theta', 'rho', 'momx', 'momy', 'momz', 'rhot', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'],
-'varout_2d': ['topo', 'max_dbz'],
+'varout_3d': ['u', 'v', 'w', 'p', 'tk', 'theta', 'rho', 'momx', 'momy', 'momz', 'rhot', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'],
+'varout_2d': ['topo', 'rhosfc', 'psfc', 'slp', 'rain', 'snow', 'max_dbz'],
 'proj': {'type': 'LC',
          'basepoint_lon': 135.,
          'basepoint_lat': 35.,
          'LC_lat1': 30.,
-         'LC_lat2': 40.,}
-'extrap': True
+         'LC_lat2': 40.,},
+'extrap': True,
 'lprate': 0.005
 }
 
@@ -31,9 +31,9 @@ var_3d = {
 'v': 'v-wind (m/s)',
 'w': 'w-wind (m/s)',
 'p': 'Pressure (Pa)',
-'temp': 'Temperature (K)',
+'tk': 'Temperature (K)',
 'theta': 'Potential temperature (K)',
-'rho': 'Density (kg/m^3)',
+'rho': 'Air density (kg/m^3)',
 'momx': 'x-momentum (kg/m2/s)',
 'momy': 'y-momentum (kg/m2/s)',
 'momz': 'z-momentum (kg/m2/s)',
@@ -50,8 +50,12 @@ var_3d = {
 }
 var_2d = {
 'topo': 'Topography height (m)',
-'max_dbz': 'Maximum radar reflectivity (dBZ)',
-'slp': 'Sea level pressure (Pa)' ##### not yet implemented!!!
+'rhosfc': 'Surface air density (kg/m^3)',
+'psfc': 'Surface pressure (Pa)',
+'slp': 'Sea level pressure (Pa)',
+'rain': 'rain rate (mm/s)',
+'snow': 'snow rate (mm/s)',
+'max_dbz': 'Maximum radar reflectivity (dBZ)'
 }
 
 
@@ -118,6 +122,10 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
                 print('Read variable: ' + ivarf)
                 var[ivar] = sio.readvar(ivarf, t=it)[:,2:-2,2:-2]
+            for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'):
+                print('Read variable: ' + ivarf)
+                var[ivar] = sio.readvar(ivarf, t=it)[2:-2,2:-2]
+
             print('Read variable: MOMX')
             var['momx'] = sio.readvar('MOMX', t=it)[:,2:-2,1:-2]
             print('Read variable: MOMY')
@@ -126,24 +134,51 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             print('Calculate: u, v, w')
             var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
                 calc_uvw(sio, rho=var['rho'], momx=var['momx'], momy=var['momy'], momz=var['momz'], first_grd=True, t=it)
+
             print('Calculate: qhydro')
             var['qhydro'] = var['qc'] + var['qr'] + var['qi'] + var['qs'] + var['qg']
+
             print('Calculate: p, t, theta')
-            var['p'], var['temp'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
+            var['p'], var['tk'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
+
             if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
                 print('Calculate: dbz, max_dbz')
                 var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
-            if 'z' in config['varout_3d'] or config['vcoor'] == 'z':
-                print('Calculate: z')
-                var['z'], height_h = calc_height(sio, topo=var['topo'])
+
+            print('Calculate: z')
+            var['z'], height_h = calc_height(sio, topo=var['topo'])
+
+            if 'rhosfc' in config['varout_2d'] or 'psfc' in config['varout_2d']:
+                print('Calculate: rhosfc, psfc')
+                var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
+
+            if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
+
+                if 'slp' in config['varout_2d']:
+                    print('Calculate: slp')
+                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
+                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
 
             if config['vcoor'] == 'z':
                 for ivar in config['varout_3d']:
                     print('Vertical interpolation at Z-coordinate: ', ivar)
-                    var_itp[ivar] = interp_z(sio, var[ivar], height=var['z'], t=it)
+                    if ivar != 'z':
+                        var_itp[ivar] = interp_z(sio, var[ivar], height=var['z'], t=it, extrap=config['extrap'])
+                if 'z' in config['varout_3d']:
+                    var_itp['z'] = np.empty((len(sio.z), ny, nx), dtype=sio.z.dtype)
+                    for ilev in range(len(sio.z)):
+                        var_itp['z'][ilev] = sio.z[ilev]
+
+                if config['extrap']:
+                    print('Calculate extrapolated values under the surface assuming a constant lapse rate: p, tk, theta, rho, rhot')
+                    extrap_z_pt(sio, var_itp['p'], var_itp['tk'], var_itp['theta'], var_itp['rho'], var_itp['rhot'], \
+                                qv=var['qv'], qhydro=var['qhydro'], p0=var['p'][0], t0_ext=t0_ext, height=var['z'], \
+                                lprate=config['lprate'], t=it)
 
         elif config['ftype'] == 'restart_sprd':
-            for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('temp', 'MOMZ'), ('p', 'RHOT'), \
+            for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('tk', 'MOMZ'), ('p', 'RHOT'), \
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
                 if ivar in config['varout_3d']:
                     print('Read variable: ' + ivarf)
@@ -161,10 +196,14 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
         elif config['ftype'] == 'history':
             for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), \
-                               ('u', 'U'), ('v', 'V'), ('w', 'W'), ('temp', 'T'), ('p', 'PRES'), ('theta', 'PT'):
+                               ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'):
                 if ivar in config['varout_3d']:
                     print('Read variable: ' + ivarf)
                     var[ivar] = sio.readvar(ivarf, t=it)
+#            for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'):
+#                if ivar in config['varout_2d']:
+#                    print('Read variable: ' + ivarf)
+#                    var[ivar] = sio.readvar(ivarf, t=it)
 
             if 'qhydro' in config['varout_3d']:
                 print('Calculate: qhydro')
@@ -177,21 +216,33 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
                 for ilev in range(len(sio.z)):
                     var['z'][ilev] = sio.z[ilev]
 
+            ###### below-surface extrapolation !!!!!! 
+
+
         else:
             raise ValueError("ftype = '{0:s}' is not supported. ftype: {'restart', 'restart_sprd', 'history'}".format(config['ftype']))
 
-        if config['vcoor'] == 'p':
+        if config['vcoor'] == 'p' and config['ftype'] != 'restart_sprd':
             for ivar in config['varout_3d']:
-                if ivar == 'p':
-                    varshape = list(var[ivar].shape)
-                    varshape[0] = len(config['plevels'])
-                    var_itp[ivar] = np.empty(varshape, dtype=var[ivar].dtype)
-                    for ilev in range(len(config['plevels'])):
-                        var_itp[ivar][ilev] = config['plevels'][ilev]
-                else:
+                if ivar != 'p':
                     print('Vertical interpolation at P-coordinate: ', ivar)
-                    var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it)
+                    var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'])
+            if 'p' in config['varout_3d']:
+                varshape = list(var[ivar].shape)
+                varshape[0] = len(config['plevels'])
+                var_itp[ivar] = np.empty(varshape, dtype=var[ivar].dtype)
+                for ilev in range(len(config['plevels'])):
+                    var_itp[ivar][ilev] = config['plevels'][ilev]
 
+            if config['ftype'] == 'restart':
+                if config['extrap']:
+                    print('Calculate extrapolated values under the surface assuming a constant lapse rate: p, tk, theta, rho, rhot')
+                    extrap_p_zt(sio, var_itp['z'], var_itp['tk'], var_itp['theta'], var_itp['rho'], var_itp['rhot'], \
+                                config['plevels'], \
+                                qv=var['qv'], qhydro=var['qhydro'], p=var['p'], t0_ext=t0_ext, height=var['z'], \
+                                lprate=config['lprate'], t=it)
+#            elif config['ftype'] == 'history':
+#                ...
 
         varout_3d_final = []
         varout_2d_final = []

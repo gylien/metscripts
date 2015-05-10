@@ -40,6 +40,8 @@ def writegrads(fo, data, varid, nv3d=0, nv2d=0, t=1, e=1, nx=1, ny=1, nz=1, nt=1
     vstart = v_onetime * (nt * (e-1) + (t-1))
     if varid <= nv3d:
         if data.shape != (nz, ny, nx):
+            print(data.shape)
+            print((nz,ny,nx))
             raise ValueError("'data' has wrong shape.")
         vstart += nx * ny * nz * (varid-1)
     else:
