@@ -1,9 +1,25 @@
 import numpy as np
 import numpy.ma as ma
+from multiprocessing import Pool
 
 
 __all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_pt', 'calc_uvw', 
            'calc_ref', 'extrap_z_t0', 'extrap_z_pt', 'extrap_p_zt', 'calc_slp', 'calc_rhosfc_psfc']
+
+
+##https://www.binpress.com/tutorial/simple-python-parallelism/121
+#def easy_parallize(f, sequence, threads=1):
+#    from multiprocessing import Pool
+#    pool = Pool(processes=threads)
+
+#    # f is given sequence. guaranteed to be in order
+#    result = pool.map(f, sequence)
+##    cleaned = [x for x in result if not x is None]
+##    cleaned = np.asarray(cleaned)
+#    # not optimal but safe
+#    pool.close()
+#    pool.join()
+#    return cleaned
 
 
 def calc_height(sio, topo=None):
@@ -89,7 +105,14 @@ def interp_z(sio, var, height=None, t=None, extrap=False):
     return varout
 
 
-def interp_p(sio, var, plevels, p=None, t=None, extrap=False):
+def interp_p_thread(sequence):
+    if sequence[3]:
+        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33)
+    else:
+        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33, right=-9.99e+33)
+
+
+def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
     """
     Interpolate a 3-D variable to constant p levels
 
@@ -116,6 +139,7 @@ def interp_p(sio, var, plevels, p=None, t=None, extrap=False):
     varout : 3-D ndarray
         Interpolated variable
     """
+
     if p is None:
         p0, = calc_pt(sio, tout=False, thetaout=False, t=t)
     else:
@@ -126,12 +150,45 @@ def interp_p(sio, var, plevels, p=None, t=None, extrap=False):
     if type(var) == ma.MaskedArray:
         varout.fill_value = var.fill_value
 
-    for j in range(varshape[1]):
-        for i in range(varshape[2]):
-            if extrap:
-                varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), np.copy(var[::-1,j,i]), left=-9.99e+33)
-            else:
-                varout[:,j,i] = np.interp(np.log(plevels), np.log(p0[::-1,j,i]), np.copy(var[::-1,j,i]), left=-9.99e+33, right=-9.99e+33)
+    log_plevels = np.log(plevels)
+    log_p0_inv = np.log(np.transpose(p0, (1, 2, 0))[:,:,::-1])
+    var_inv = np.copy(np.transpose(var, (1, 2, 0))[:,:,::-1])
+
+    if threads == 1:
+        for j in range(varshape[1]):
+            for i in range(varshape[2]):
+                if extrap:
+                    varout[:,j,i] = np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
+                else:
+                    varout[:,j,i] = np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
+    else:
+#        def tmpfunc(ij):
+##            i = ij % varshape[2]
+##            j = ij // varshape[2]
+#            return [1., 2., 4.]
+#            if extrap:
+#                return np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
+#            else:
+#                return np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
+
+        sequences = []
+        for j in range(varshape[1]):
+            for i in range(varshape[2]):
+                sequences.append((log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], extrap))
+
+        pool = Pool(processes=threads)
+        results = pool.map(interp_p_thread, sequences) #, chunksize=100)
+#        cleaned = [x for x in results if not x is None]
+# not optimal but safe
+        pool.close()
+        pool.join()
+
+        for j in range(varshape[1]):
+            for i in range(varshape[2]):
+                ij = j * varshape[2] + i
+                varout[:,j,i] = results[ij]
+
+
     varout.mask[varout == -9.99e+33] = True
 
     return varout
@@ -434,7 +491,7 @@ def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
     return t0_ext
 
 
-def extrap_z_pt(sio, pres, temp, theta, rho, rhot, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None):
+def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
     """
     Calculate extrapolated 3-D variables under the surface
     """
@@ -447,21 +504,27 @@ def extrap_z_pt(sio, pres, temp, theta, rho, rhot, qv, qhydro, p0, t0_ext, heigh
     Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
     RovCP = Rtot / (CVdry + Rtot)
 
-    varshape = list(pres.shape)
+    varshape = list(p.shape)
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
             for k in range(varshape[0]):
                 if sio.z[k] <= height[0,j,i]:
-                    temp[k,j,i] = t0_ext[j,i] + lprate * (height[0,j,i] - sio.z[k])
-                    pres[k,j,i] = p0[j,i] * (temp[k,j,i] / t0_ext[j,i]) ** (g/Rtot[j,i]/lprate)
-                    theta[k,j,i] = temp[k,j,i] * (PRE00 / pres[k,j,i]) ** RovCP[j,i]
-                    rho[k,j,i] = pres[k,j,i] / (Rtot[j,i] * temp[k,j,i])
-                    rhot[k,j,i] = rho[k,j,i] * theta[k,j,i]
+                    tk_s = t0_ext[j,i] + lprate * (height[0,j,i] - sio.z[k])
+                    p_s = p0[j,i] * (tk_s / t0_ext[j,i]) ** (g/Rtot[j,i]/lprate)
+                    theta_s = tk_s * (PRE00 / p_s) ** RovCP[j,i]
+                    rho_s = p_s / (Rtot[j,i] * tk_s)
+                    if rhot is not None: rhot_s = rho_s * theta_s
+
+                    if p     is not None: p[k,j,i] = p_s
+                    if tk    is not None: tk[k,j,i] = tk_s
+                    if theta is not None: theta[k,j,i] = theta_s
+                    if rho   is not None: rho[k,j,i] = rho_s
+                    if rhot  is not None: rhot[k,j,i] = rhot_s
     return
 
 
-def extrap_p_zt(sio, z, temp, theta, rho, rhot, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=None):
+def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
     """
     Calculate extrapolated 3-D variables under the surface
     """
@@ -480,11 +543,17 @@ def extrap_p_zt(sio, z, temp, theta, rho, rhot, plevels, qv, qhydro, p, t0_ext, 
         for i in range(varshape[2]):
             for k in range(varshape[0]):
                 if plevels[k] >= p[0,j,i]:
-                    temp[k,j,i] = t0_ext[j,i] * (plevels[k] / p[0,j,i]) ** (Rtot[j,i]*lprate/g)
-                    z[k,j,i] = height[0,j,i] + t0_ext[j,i]/lprate * (1. - (plevels[k]/p[0,j,i]) ** (Rtot[j,i]*lprate/g))
-                    theta[k,j,i] = temp[k,j,i] * (PRE00 / plevels[k]) ** RovCP[j,i]
-                    rho[k,j,i] = plevels[k] / (Rtot[j,i] * temp[k,j,i])
-                    rhot[k,j,i] = rho[k,j,i] * theta[k,j,i]
+                    if z is not None: z_s = height[0,j,i] + t0_ext[j,i]/lprate * (1. - (plevels[k]/p[0,j,i]) ** (Rtot[j,i]*lprate/g))
+                    tk_s = t0_ext[j,i] * (plevels[k] / p[0,j,i]) ** (Rtot[j,i]*lprate/g)
+                    theta_s = tk_s * (PRE00 / plevels[k]) ** RovCP[j,i]
+                    rho_s = plevels[k] / (Rtot[j,i] * tk_s)
+                    if rhot is not None: rhot_s = rho_s * theta_s
+
+                    if z     is not None: z[k,j,i] = z_s
+                    if tk    is not None: tk[k,j,i] = tk_s
+                    if theta is not None: theta[k,j,i] = theta_s
+                    if rho   is not None: rho[k,j,i] = rho_s
+                    if rhot  is not None: rhot[k,j,i] = rhot_s
     return
 
 

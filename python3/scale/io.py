@@ -6,7 +6,7 @@ import datetime as dt
 from netCDF4 import Dataset
 
 
-__all__ = ['scale_dimlist', 'scale_dimlist_g', 'scale_file_suffix', 'scale_time_0',
+__all__ = ['scale_dimlist', 'scale_dimlist_g', 'scale_file_suffix',
            'scale_open', 'scale_close', 'scale_gettime', 'scale_puttime',
            'scale_read', 'scale_write', 'ScaleIO']
 
@@ -26,7 +26,6 @@ scale_dimlist_g = [
 ['x', 'xh']
 ]
 scale_file_suffix = '.pe{:06d}.nc'
-scale_time_0 = dt.datetime(2013, 1, 1, 0, 0, 0)
 
 
 def scale_open(basename, mode='r', scale_dimdef=None):
@@ -136,7 +135,7 @@ def scale_close(rootgrps):
         irg.close()
 
 
-def scale_gettime(scale_time):
+def scale_gettime(scale_time, year):
     """
     Convert SCALE model time to python datetime.
 
@@ -150,7 +149,7 @@ def scale_gettime(scale_time):
     time : <datetime.datetime> class
         Time in <datetime.datetime> class
     """
-    return scale_time_0 + dt.timedelta(seconds=scale_time)
+    return dt.datetime(year, 1, 1, 0, 0, 0) + dt.timedelta(seconds=scale_time)
 
 
 def scale_puttime(time):
@@ -167,7 +166,7 @@ def scale_puttime(time):
     scale_time : float
         Time in SCALE files
     """
-    return (time - scale_time_0).total_seconds()
+    return (time - dt.datetime(time.year, 1, 1, 0, 0, 0)).total_seconds()
 
 
 def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
@@ -319,7 +318,7 @@ class ScaleIO:
     ----------
     ***
     """
-    def __init__(self, basename, mode='r'):
+    def __init__(self, basename, mode='r', year=None):
         """
         Parameters
         ----------
@@ -330,6 +329,8 @@ class ScaleIO:
             * 'r' -- read (default)
             * 'r+' -- read/write
         """
+        if year is None:
+            year = dt.datetime.now().year
         self.nproc, self.rootgrps, self.dimdef = scale_open(basename, mode)
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         if self.dimdef['len']['time'][0] is None:
@@ -337,9 +338,9 @@ class ScaleIO:
         else:
             time_array = scale_read(self.nproc, self.rootgrps, self.dimdef, 'time')[1]
             self.t = np.empty_like(time_array, dtype='O')
-#            self.t = [scale_gettime(i) for i in time_array]
+#            self.t = [scale_gettime(i, year) for i in time_array]
             for it in range(len(time_array)):
-                self.t[it] = scale_gettime(time_array[it])
+                self.t[it] = scale_gettime(time_array[it], year)
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         self.zh = scale_read(self.nproc, self.rootgrps, self.dimdef, 'zh')[1]
         self.lon = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lon')[1]

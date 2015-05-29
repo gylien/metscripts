@@ -10,7 +10,7 @@ __all__ = ['letkfout_grads']
 
 def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timedelta(hours=6),
                    outtype='all', member='all',
-                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-', extrap='-'):
+                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-', extrap='-', tstart='-', tend='-', tskip='-', threads='-'):
     """
     """
     if etime is None:
@@ -89,7 +89,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
 
                         convert("{:s}/{:s}/{:s}/{:s}/init".format(letkfoutdir, timef, ityp, im),
                                 topo=topofile, gradsfile=gradsfile, ctlfile=ctlfile, t=time,
-                                ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj)
+                                ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap,
+                                threads=threads)
 
                         if ctlfile is not None:
                             with open(ctlfile, 'r') as f:
@@ -148,7 +149,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     convert("{:s}/{:s}/{:s}/{:s}/history".format(letkfoutdir, timef, ityp, im),
                     #        topo=topofile, 
                             gradsfile=gradsfile, ctlfile=ctlfile, t=None,
-                            ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj)
+                            ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap,
+                            tstart=tstart, tend=tend, tskip=tskip, threads=threads)
 
                     if ctlfile is not None:
                         if im == '0001':
