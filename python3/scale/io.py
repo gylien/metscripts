@@ -76,6 +76,11 @@ def scale_open(basename, mode='r', scale_dimdef=None):
     ip = 0
     while True:
         ncfile = basename + scale_file_suffix.format(ip)
+
+###
+###        print(ncfile)
+###
+
         if not os.path.isfile(ncfile):
             break
 
@@ -219,6 +224,11 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
                 vardim_sub[-1] = idim
                 break
 
+###
+###    print(varshape)
+###
+
+
     if all(i is None for i in vardim_sub):
         return vardim, vardata_0
     else:
@@ -239,6 +249,12 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
                 vardata[slice_obj] = vardata_0
             else:
                 vardim, vardata[slice_obj] = ncphysio.ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist, time=time, it=it)
+
+###
+###            print(varname, ip)
+###
+
+
         return vardim, vardata
 
 

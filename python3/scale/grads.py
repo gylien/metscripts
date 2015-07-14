@@ -21,6 +21,8 @@ config = {
 'proj': {'type': 'LC',
          'basepoint_lon': 135.,
          'basepoint_lat': 35.,
+         'basepoint_x': None,
+         'basepoint_y': None,
          'LC_lat1': 30.,
          'LC_lat2': 40.,},
 'extrap': True,
@@ -112,6 +114,125 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     print('nt =', nt)
     print('--------------------')
 
+
+
+
+
+    its = config['tstart']
+    ite = config['tend']
+    tskip = config['tskip']
+    if ite == -1:
+        ite = nt
+    nto = len(range(its, ite, tskip))
+
+
+    if ctlfile is not None:
+        print('Generate CTL file')
+
+        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+            lons = np.min(sio.lon[2:-2,2:-2])
+            lone = np.max(sio.lon[2:-2,2:-2])
+            lats = np.min(sio.lat[2:-2,2:-2])
+            late = np.max(sio.lat[2:-2,2:-2])
+        else:
+            lons = np.min(sio.lon)
+            lone = np.max(sio.lon)
+            lats = np.min(sio.lat)
+            late = np.max(sio.lat)
+        nxout = nx * 2 - 1
+        nyout = ny * 2 - 1
+        lonint = (lone - lons) / (nxout-1)
+        latint = (late - lats) / (nyout-1)
+        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+            dx = sio.dimdef['coor_g']['x'][3] - sio.dimdef['coor_g']['x'][2]
+            dy = sio.dimdef['coor_g']['y'][3] - sio.dimdef['coor_g']['y'][2]
+        else:
+            dx = sio.dimdef['coor_g']['x'][1] - sio.dimdef['coor_g']['x'][0]
+            dy = sio.dimdef['coor_g']['y'][1] - sio.dimdef['coor_g']['y'][0]
+
+        levs = ''
+        if config['vcoor'] == 'z' or config['vcoor'] == 'o' or config['ftype'] == 'restart_sprd':
+            for ilev in range(len(sio.z)):
+                levs += "{0:12.6f}\n".format(sio.z[ilev])
+        elif config['vcoor'] == 'p':
+            for ilev in range(len(config['plevels'])):
+                levs += "{0:12.6f}\n".format(config['plevels'][ilev] / 100.)
+
+        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+            ts = t
+            tint = dt.timedelta(hours=6)
+        else:
+            ts = sio.t[0]
+            if len(sio.t) > 1:
+                tint = (sio.t[1] - sio.t[0]) * tskip
+            else:
+                tint = dt.timedelta(hours=6)
+
+        if 'basepoint_x' in config['proj'] and config['proj']['basepoint_x'] is None:
+            iref = 0.5*(nx+1)
+        else:
+            iref = config['proj']['basepoint_x'] / float(dx) + 0.5
+        if 'basepoint_y' in config['proj'] and config['proj']['basepoint_y'] is None:
+            jref = 0.5*(ny+1)
+        else:
+            jref = config['proj']['basepoint_y'] / float(dy) + 0.5
+        pdef = 'pdef {isize:6d} {jsize:6d} lccr {latref:12.6f} {lonref:12.6f} {iref:.1f} {jref:.1f} {Struelat:12.6f} {Ntruelat:12.6f} {slon:12.6f} {dx:12.6f} {dy:12.6f}'.format(
+               isize=nx, jsize=ny,
+               latref=config['proj']['basepoint_lat'], lonref=config['proj']['basepoint_lon'],
+               iref=iref, jref=jref,
+               Struelat=config['proj']['LC_lat1'], Ntruelat=config['proj']['LC_lat2'],
+               slon=config['proj']['basepoint_lon'], dx=dx, dy=dy)
+
+        varstr = ''
+#        for ivar in varout_3d_final:
+        for ivar in config['varout_3d']:
+            varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=nzout, dscr=var_3d[ivar])
+#        for ivar in varout_2d_final:
+        for ivar in config['varout_2d']:
+            varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d[ivar])
+
+        if ctlfile is 'auto':
+            ctlfile0 = '{0:s}.ctl'.format(gradsfile.rsplit('.', 1)[0])
+        else:
+            ctlfile0 = ctlfile
+
+        template = """dset ^{dset:s}
+undef {undef:e}
+xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
+ydef {nyout:6d} linear {lats:12.6f} {latint:12.6f}
+zdef {nz:6d} levels
+{levs:s}tdef {nto:6d} linear {ts:s} {tint:s}
+{pdef:s}
+vars {nvar:d}
+{varstr:s}endvars
+"""
+        context = {
+        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile0)),
+        'undef':  config['missing'],
+        'nxout':  nxout,
+        'lons':   lons,
+        'lonint': lonint,
+        'nyout':  nyout,
+        'lats':   lats,
+        'latint': latint,
+        'nz':     nzout,
+        'levs':   levs,
+        'nto':     nto,
+        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
+        'tint':   '{0:d}mn'.format(int(round(tint.total_seconds() / 60)))	,
+        'pdef':   pdef,
+#        'nvar':   len(varout_3d_final) + len(varout_2d_final),
+        'nvar':   len(config['varout_3d']) + len(config['varout_2d']),
+        'varstr': varstr
+        }
+
+        with open(ctlfile0, 'w') as fc:
+            fc.write(template.format(**context))
+
+
+
+
+
     necessary = []
     if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
         necessary += ['z']
@@ -144,20 +265,8 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             var['topo'] = topo
 
 
-
-
-
-
-
-
-
     f = open(gradsfile, 'wb')
 
-    its = config['tstart']
-    ite = config['tend']
-    if ite == -1:
-        ite = nt
-    tskip = config['tskip']
     ito = 0
     for it in range(its, ite, tskip):
         if config['ftype'] == 'restart':
@@ -370,9 +479,9 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
                                nv3d=len(varout_3d_final), nv2d=len(varout_2d_final), t=ito+1, nx=nx, ny=ny, nz=nzout, nt=nt)
 
         ito += 1
-        it_prev = it
+#        it_prev = it
 
-    nto = ito
+#    nto = ito
 
     f.close()
 
@@ -381,95 +490,95 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
 
 
 
-    if ctlfile is not None:
-        print('Generate CTL file')
+#    if ctlfile is not None:
+#        print('Generate CTL file')
 
-        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
-            lons = np.min(sio.lon[2:-2,2:-2])
-            lone = np.max(sio.lon[2:-2,2:-2])
-            lats = np.min(sio.lat[2:-2,2:-2])
-            late = np.max(sio.lat[2:-2,2:-2])
-        else:
-            lons = np.min(sio.lon)
-            lone = np.max(sio.lon)
-            lats = np.min(sio.lat)
-            late = np.max(sio.lat)
-        nxout = nx * 2 - 1
-        nyout = ny * 2 - 1
-        lonint = (lone - lons) / (nxout-1)
-        latint = (late - lats) / (nyout-1)
-        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
-            dx = sio.dimdef['coor_g']['x'][3] - sio.dimdef['coor_g']['x'][2]
-            dy = sio.dimdef['coor_g']['y'][3] - sio.dimdef['coor_g']['y'][2]
-        else:
-            dx = sio.dimdef['coor_g']['x'][1] - sio.dimdef['coor_g']['x'][0]
-            dy = sio.dimdef['coor_g']['y'][1] - sio.dimdef['coor_g']['y'][0]
+#        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+#            lons = np.min(sio.lon[2:-2,2:-2])
+#            lone = np.max(sio.lon[2:-2,2:-2])
+#            lats = np.min(sio.lat[2:-2,2:-2])
+#            late = np.max(sio.lat[2:-2,2:-2])
+#        else:
+#            lons = np.min(sio.lon)
+#            lone = np.max(sio.lon)
+#            lats = np.min(sio.lat)
+#            late = np.max(sio.lat)
+#        nxout = nx * 2 - 1
+#        nyout = ny * 2 - 1
+#        lonint = (lone - lons) / (nxout-1)
+#        latint = (late - lats) / (nyout-1)
+#        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+#            dx = sio.dimdef['coor_g']['x'][3] - sio.dimdef['coor_g']['x'][2]
+#            dy = sio.dimdef['coor_g']['y'][3] - sio.dimdef['coor_g']['y'][2]
+#        else:
+#            dx = sio.dimdef['coor_g']['x'][1] - sio.dimdef['coor_g']['x'][0]
+#            dy = sio.dimdef['coor_g']['y'][1] - sio.dimdef['coor_g']['y'][0]
 
-        levs = ''
-        if config['vcoor'] == 'z' or config['vcoor'] == 'o' or config['ftype'] == 'restart_sprd':
-            for ilev in range(len(sio.z)):
-                levs += "{0:12.6f}\n".format(sio.z[ilev])
-        elif config['vcoor'] == 'p':
-            for ilev in range(len(config['plevels'])):
-                levs += "{0:12.6f}\n".format(config['plevels'][ilev] / 100.)
+#        levs = ''
+#        if config['vcoor'] == 'z' or config['vcoor'] == 'o' or config['ftype'] == 'restart_sprd':
+#            for ilev in range(len(sio.z)):
+#                levs += "{0:12.6f}\n".format(sio.z[ilev])
+#        elif config['vcoor'] == 'p':
+#            for ilev in range(len(config['plevels'])):
+#                levs += "{0:12.6f}\n".format(config['plevels'][ilev] / 100.)
 
-        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
-            ts = t
-            tint = dt.timedelta(hours=6)
-        else:
-            ts = sio.t[0]
-            if len(sio.t) > 1:
-                tint = (sio.t[1] - sio.t[0]) * tskip
-            else:
-                tint = dt.timedelta(hours=6)
+#        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+#            ts = t
+#            tint = dt.timedelta(hours=6)
+#        else:
+#            ts = sio.t[0]
+#            if len(sio.t) > 1:
+#                tint = (sio.t[1] - sio.t[0]) * tskip
+#            else:
+#                tint = dt.timedelta(hours=6)
 
-        pdef = 'pdef {isize:6d} {jsize:6d} lccr {latref:12.6f} {lonref:12.6f} {iref:.1f} {jref:.1f} {Struelat:12.6f} {Ntruelat:12.6f} {slon:12.6f} {dx:12.6f} {dy:12.6f}'.format(
-               isize=nx, jsize=ny,
-               latref=config['proj']['basepoint_lat'], lonref=config['proj']['basepoint_lon'],
-               iref=0.5*(nx+1), jref=0.5*(ny+1),
-               Struelat=config['proj']['LC_lat1'], Ntruelat=config['proj']['LC_lat2'],
-               slon=config['proj']['basepoint_lon'], dx=dx, dy=dy)
+#        pdef = 'pdef {isize:6d} {jsize:6d} lccr {latref:12.6f} {lonref:12.6f} {iref:.1f} {jref:.1f} {Struelat:12.6f} {Ntruelat:12.6f} {slon:12.6f} {dx:12.6f} {dy:12.6f}'.format(
+#               isize=nx, jsize=ny,
+#               latref=config['proj']['basepoint_lat'], lonref=config['proj']['basepoint_lon'],
+#               iref=0.5*(nx+1), jref=0.5*(ny+1),
+#               Struelat=config['proj']['LC_lat1'], Ntruelat=config['proj']['LC_lat2'],
+#               slon=config['proj']['basepoint_lon'], dx=dx, dy=dy)
 
-        var = ''
-        for ivar in varout_3d_final:
-            var += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=nzout, dscr=var_3d[ivar])
-        for ivar in varout_2d_final:
-            var += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d[ivar])
+#        var = ''
+#        for ivar in varout_3d_final:
+#            var += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=nzout, dscr=var_3d[ivar])
+#        for ivar in varout_2d_final:
+#            var += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d[ivar])
 
-        if ctlfile is 'auto':
-            ctlfile0 = '{0:s}.ctl'.format(gradsfile.rsplit('.', 1)[0])
-        else:
-            ctlfile0 = ctlfile
+#        if ctlfile is 'auto':
+#            ctlfile0 = '{0:s}.ctl'.format(gradsfile.rsplit('.', 1)[0])
+#        else:
+#            ctlfile0 = ctlfile
 
-        template = """dset ^{dset:s}
-undef {undef:e}
-xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
-ydef {nyout:6d} linear {lats:12.6f} {latint:12.6f}
-zdef {nz:6d} levels
-{levs:s}tdef {nto:6d} linear {ts:s} {tint:s}
-{pdef:s}
-vars {nvar:d}
-{var:s}endvars
-"""
-        context = {
-        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile0)),
-        'undef':  config['missing'],
-        'nxout':  nxout,
-        'lons':   lons,
-        'lonint': lonint,
-        'nyout':  nyout,
-        'lats':   lats,
-        'latint': latint,
-        'nz':     nzout,
-        'levs':   levs,
-        'nto':     nto,
-        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
-        'tint':   '{0:d}mn'.format(int(round(tint.total_seconds() / 60)))	,
-        'pdef':   pdef,
-        'nvar':   len(varout_3d_final) + len(varout_2d_final),
-        'var':    var,
-        }
+#        template = """dset ^{dset:s}
+#undef {undef:e}
+#xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
+#ydef {nyout:6d} linear {lats:12.6f} {latint:12.6f}
+#zdef {nz:6d} levels
+#{levs:s}tdef {nto:6d} linear {ts:s} {tint:s}
+#{pdef:s}
+#vars {nvar:d}
+#{var:s}endvars
+#"""
+#        context = {
+#        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile0)),
+#        'undef':  config['missing'],
+#        'nxout':  nxout,
+#        'lons':   lons,
+#        'lonint': lonint,
+#        'nyout':  nyout,
+#        'lats':   lats,
+#        'latint': latint,
+#        'nz':     nzout,
+#        'levs':   levs,
+#        'nto':     nto,
+#        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
+#        'tint':   '{0:d}mn'.format(int(round(tint.total_seconds() / 60)))	,
+#        'pdef':   pdef,
+#        'nvar':   len(varout_3d_final) + len(varout_2d_final),
+#        'var':    var,
+#        }
 
-        with open(ctlfile0, 'w') as fc:
-            fc.write(template.format(**context))
+#        with open(ctlfile0, 'w') as fc:
+#            fc.write(template.format(**context))
 
