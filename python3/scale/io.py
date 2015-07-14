@@ -334,7 +334,7 @@ class ScaleIO:
     ----------
     ***
     """
-    def __init__(self, basename, mode='r', year=None):
+    def __init__(self, basename, mode='r', year=None, cache=False):
         """
         Parameters
         ----------
@@ -344,6 +344,13 @@ class ScaleIO:
             File I/O mode
             * 'r' -- read (default)
             * 'r+' -- read/write
+        year : integer
+            Year of the data.
+            * None -- the current year (default)
+        cache : bool
+            Option to cache the data read into the memory.
+            * False -- do not cache (default)
+            * True -- cache
         """
         if year is None:
             year = dt.datetime.now().year
@@ -361,6 +368,8 @@ class ScaleIO:
         self.zh = scale_read(self.nproc, self.rootgrps, self.dimdef, 'zh')[1]
         self.lon = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lon')[1]
         self.lat = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lat')[1]
+        if cache:
+            self.cache = {}
 
 
     def __del__(self):
@@ -388,6 +397,42 @@ class ScaleIO:
             Variable data in a ndarray or masked_array (if the variable has the 
             `_FillValue` attribute).
         """
+        if hasattr(self, 'cache'):
+            if self.t is None:
+                tkey = 0
+            elif t is None:
+                tkey = 'all'
+            elif type(t) is int:
+                tkey = t
+            elif type(t) is dt.datetime:
+                try:
+                    tkey = self.t.index(t)
+                except ValueError:
+                    raise ValueError("Cannot find 't' = " + str(t))
+            else:
+                raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
+
+            if varname in self.cache:
+                if tkey in self.cache[varname]:
+                    if tkey == 'all':
+                        print('*** read from cache: {:s} ***'.format(varname))
+                    else:
+                        print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
+                    return self.cache[varname][tkey]
+                elif 'all' in self.cache[varname] and tkey != 'all':
+                    print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
+                    return self.cache[varname]['all'][tkey]
+                else:
+                    if tkey == 'all':
+                        del self.cache[varname]
+                        self.cache[varname] = {}
+                    self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
+                    return self.cache[varname][tkey]
+            else:
+                self.cache[varname] = {}
+                self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
+                return self.cache[varname][tkey]
+
         return scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
 
 
