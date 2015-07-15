@@ -89,7 +89,12 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     """
     rc(**kwargs)
 
-    sio = ScaleIO(basename)
+    if config['ftype'] in ('history', 'history_z'):
+        bufsize = 0
+    else:
+        bufsize = 2
+    sio = ScaleIO(basename, cache=True, bufsize=bufsize)
+
     nx = sio.dimdef['len_g']['x']
     ny = sio.dimdef['len_g']['y']
     if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
@@ -129,16 +134,14 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     if ctlfile is not None:
         print('Generate CTL file')
 
-        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
-            lons = np.min(sio.lon[2:-2,2:-2])
-            lone = np.max(sio.lon[2:-2,2:-2])
-            lats = np.min(sio.lat[2:-2,2:-2])
-            late = np.max(sio.lat[2:-2,2:-2])
+        if bufsize == 0:
+            sliceobj = slice(None)
         else:
-            lons = np.min(sio.lon)
-            lone = np.max(sio.lon)
-            lats = np.min(sio.lat)
-            late = np.max(sio.lat)
+            sliceobj = slice(bufsize, -bufsize)
+        lons = np.min(sio.lon[sliceobj])
+        lone = np.max(sio.lon[sliceobj])
+        lats = np.min(sio.lat[sliceobj])
+        late = np.max(sio.lat[sliceobj])
         nxout = nx * 2 - 1
         nyout = ny * 2 - 1
         lonint = (lone - lons) / (nxout-1)
@@ -254,13 +257,13 @@ vars {nvar:d}
         if topo is None:
             print('Read variable: TOPO')
             if config['ftype'] == 'restart':
-                var['topo'] = sio.readvar('TOPO')[2:-2,2:-2]
+                var['topo'] = sio.readvar('TOPO')
             elif config['ftype'] == 'history':
                 var['topo'] = sio.readvar('topo')
         elif type(topo) is str :
-            sio_topo = ScaleIO(topo)
+            sio_topo = ScaleIO(topo, cache=True, bufsize=2)
             print('Read variable: TOPO')
-            var['topo'] = sio_topo.readvar('TOPO')[2:-2,2:-2]
+            var['topo'] = sio_topo.readvar('TOPO')
         else:
             var['topo'] = topo
 
@@ -270,38 +273,38 @@ vars {nvar:d}
     ito = 0
     for it in range(its, ite, tskip):
         if config['ftype'] == 'restart':
-            for ivar, ivarf in ('rho', 'DENS'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
+            for ivar, ivarf in ('rho', 'DENS'), ('rhot', 'RHOT'), \
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
                 print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                var[ivar] = sio.readvar(ivarf, t=it)[:,2:-2,2:-2]
+                var[ivar] = sio.readvar(ivarf, t=it)
             for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'):
                 print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                var[ivar] = sio.readvar(ivarf, t=it)[2:-2,2:-2]
+                var[ivar] = sio.readvar(ivarf, t=it)
 
-            print('Read variable: MOMX [t = ' + str(it) + ']')
-            var['momx'] = sio.readvar('MOMX', t=it)[:,2:-2,1:-2]
-            print('Read variable: MOMY [t = ' + str(it) + ']')
-            var['momy'] = sio.readvar('MOMY', t=it)[:,1:-2,2:-2]
-
-            print('Calculate: u, v, w')
+            print('Calculate: destaggered u, v, w, momx, momy, momz')
+#            var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
+#                calc_destagger_uvw(sio, rho=var['rho'], momx=var['momx'], momy=var['momy'], momz=var['momz'], first_grd=True, t=it)
             var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
-                calc_uvw(sio, rho=var['rho'], momx=var['momx'], momy=var['momy'], momz=var['momz'], first_grd=True, t=it)
+                calc_destagger_uvw(sio, first_grd=True, t=it)
 
             print('Calculate: qhydro')
-            var['qhydro'] = var['qc'] + var['qr'] + var['qi'] + var['qs'] + var['qg']
+            var['qhydro'] = calc_qhydro(sio, t=it)
 
             print('Calculate: p, t, theta')
-            var['p'], var['tk'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
+#            var['p'], var['tk'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
+            var['p'], var['tk'], var['theta'] = calc_pt(sio, qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
 
             if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
                 print('Calculate: dbz, max_dbz')
-                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
+#                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
+                var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
 
             print('Calculate: z')
             var['z'], height_h = calc_height(sio, topo=var['topo'])
 
             if 'rhosfc' in config['varout_2d'] or 'psfc' in config['varout_2d']:
                 print('Calculate: rhosfc, psfc')
+#                var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
                 var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
 
             if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
@@ -310,6 +313,8 @@ vars {nvar:d}
 
                 if 'slp' in config['varout_2d']:
                     print('Calculate: slp')
+#                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
+#                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
                     var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
                                           p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
 
@@ -318,7 +323,7 @@ vars {nvar:d}
                                ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
                 if ivar in config['varout_3d']:
                     print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                    var[ivar] = sio.readvar(ivarf, t=it)[:,2:-2,2:-2]
+                    var[ivar] = sio.readvar(ivarf, t=it)
 
             print('Destagger: u, v, w')
             if 'u' in config['varout_3d']:
@@ -354,10 +359,11 @@ vars {nvar:d}
 
             if 'qhydro' in config['varout_3d'] and 'qhydro' not in var:
                 print('Calculate: qhydro')
-                var['qhydro'] = var['qc'] + var['qr'] + var['qi'] + var['qs'] + var['qg']
+                var['qhydro'] = calc_qhydro(sio, t=it)
             if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
                 print('Calculate: dbz, max_dbz')
-                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
+#                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
+                var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
 
             print('Calculate: z')
             var['z'], height_h = calc_height(sio, topo=var['topo'])
@@ -417,14 +423,15 @@ vars {nvar:d}
             for ivar in var:
                 if ivar != 'p' and (ivar in config['varout_3d']):
                     print('Vertical interpolation at P-coordinate: ', ivar)
-                    var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'], threads=config['threads'])
+                    var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'])
+#                    var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'], threads=config['threads'])
 
             if 'p' in config['varout_3d']:
-                varshape = list(var[ivar].shape)
+                varshape = list(var[config['varout_3d'][0]].shape)
                 varshape[0] = len(config['plevels'])
-                var_itp[ivar] = np.empty(varshape, dtype=var[ivar].dtype)
+                var_itp['p'] = np.empty(varshape, dtype=var[ivar].dtype)
                 for ilev in range(len(config['plevels'])):
-                    var_itp[ivar][ilev] = config['plevels'][ilev]
+                    var_itp['p'][ilev] = config['plevels'][ilev]
 
             if config['extrap']:
                 kws = {}

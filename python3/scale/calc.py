@@ -3,7 +3,7 @@ import numpy.ma as ma
 from multiprocessing import Pool
 
 
-__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_pt', 'calc_uvw', 
+__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
            'calc_ref', 'extrap_z_t0', 'extrap_z_pt', 'extrap_p_zt', 'calc_slp', 'calc_rhosfc_psfc']
 
 
@@ -41,17 +41,15 @@ def calc_height(sio, topo=None):
         Height in half levels (m)
     """
     if topo is None:
-        topo0 = sio.readvar('TOPO')[2:-2,2:-2]
-    else:
-        topo0 = topo
+        topo = sio.readvar('TOPO')
 
-    height = np.zeros((sio.dimdef['len']['z'][0], topo0.shape[0], topo0.shape[1]), dtype=topo0.dtype)
-    height_h = np.zeros((sio.dimdef['len']['zh'][0], topo0.shape[0], topo0.shape[1]), dtype=topo0.dtype)
+    height = np.zeros((sio.dimdef['len']['z'][0], topo.shape[0], topo.shape[1]), dtype=topo.dtype)
+    height_h = np.zeros((sio.dimdef['len']['zh'][0], topo.shape[0], topo.shape[1]), dtype=topo.dtype)
 
     for k in range(len(sio.z)):
-        height[k,:,:] = topo0 + (sio.zh[-1] - topo0) / sio.zh[-1] * sio.z[k]
+        height[k,:,:] = topo + (sio.zh[-1] - topo) / sio.zh[-1] * sio.z[k]
     for k in range(len(sio.zh)):
-        height_h[k,:,:] = topo0 + (sio.zh[-1] - topo0) / sio.zh[-1] * sio.zh[k]
+        height_h[k,:,:] = topo + (sio.zh[-1] - topo) / sio.zh[-1] * sio.zh[k]
 
     return height, height_h
 
@@ -82,10 +80,8 @@ def interp_z(sio, var, height=None, t=None, extrap=False):
         Interpolated variable
     """
     if height is None:
-        height0 = sio.readvar('height', t=t)[:,2:-2,2:-2]
-    else:
-        height0 = height
-    height0[0,:,:] -= 1.e-2
+        height = sio.readvar('height', t=t)
+    height[0,:,:] -= 1.e-2
 
     varshape = list(var.shape)
     varshape[0] = sio.dimdef['len']['z'][0]
@@ -96,23 +92,24 @@ def interp_z(sio, var, height=None, t=None, extrap=False):
     for j in range(varshape[1]):
         for i in range(varshape[2]):
             if extrap:
-                varout[:,j,i] = np.interp(sio.z, np.copy(height0[:,j,i]), np.copy(var[:,j,i]), right=-9.99e+33)
-#                varout[:,j,i] = np.interp(sio.z, height0[:,j,i], var[:,j,i], right=-9.99e+33)
+                varout[:,j,i] = np.interp(sio.z, np.copy(height[:,j,i]), np.copy(var[:,j,i]), right=-9.99e+33)
+#                varout[:,j,i] = np.interp(sio.z, height[:,j,i], var[:,j,i], right=-9.99e+33)
             else:
-                varout[:,j,i] = np.interp(sio.z, np.copy(height0[:,j,i]), np.copy(var[:,j,i]), left=-9.99e+33, right=-9.99e+33)
+                varout[:,j,i] = np.interp(sio.z, np.copy(height[:,j,i]), np.copy(var[:,j,i]), left=-9.99e+33, right=-9.99e+33)
     varout.mask[varout == -9.99e+33] = True
 
     return varout
 
 
-def interp_p_thread(sequence):
-    if sequence[3]:
-        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33)
-    else:
-        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33, right=-9.99e+33)
+#def interp_p_thread(sequence):
+#    if sequence[3]:
+#        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33)
+#    else:
+#        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33, right=-9.99e+33)
 
 
-def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
+def interp_p(sio, var, plevels, p=None, t=None, extrap=False):
+#def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
     """
     Interpolate a 3-D variable to constant p levels
 
@@ -141,9 +138,7 @@ def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
     """
 
     if p is None:
-        p0, = calc_pt(sio, tout=False, thetaout=False, t=t)
-    else:
-        p0 = p
+        p = calc_pt(sio, tout=False, thetaout=False, t=t)[0]
     varshape = list(var.shape)
     varshape[0] = len(plevels)
     varout = ma.masked_all(varshape, dtype=var.dtype)
@@ -151,42 +146,42 @@ def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
         varout.fill_value = var.fill_value
 
     log_plevels = np.log(plevels)
-    log_p0_inv = np.log(np.transpose(p0, (1, 2, 0))[:,:,::-1])
+    log_p_inv = np.log(np.transpose(p, (1, 2, 0))[:,:,::-1])
     var_inv = np.copy(np.transpose(var, (1, 2, 0))[:,:,::-1])
 
-    if threads == 1:
-        for j in range(varshape[1]):
-            for i in range(varshape[2]):
-                if extrap:
-                    varout[:,j,i] = np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
-                else:
-                    varout[:,j,i] = np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
-    else:
-#        def tmpfunc(ij):
-##            i = ij % varshape[2]
-##            j = ij // varshape[2]
-#            return [1., 2., 4.]
-#            if extrap:
-#                return np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
-#            else:
-#                return np.interp(log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
+#    if threads == 1:
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            if extrap:
+                varout[:,j,i] = np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
+            else:
+                varout[:,j,i] = np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
+#    else:
+##        def tmpfunc(ij):
+###            i = ij % varshape[2]
+###            j = ij // varshape[2]
+##            return [1., 2., 4.]
+##            if extrap:
+##                return np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
+##            else:
+##                return np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
 
-        sequences = []
-        for j in range(varshape[1]):
-            for i in range(varshape[2]):
-                sequences.append((log_plevels, log_p0_inv[j,i,:], var_inv[j,i,:], extrap))
+#        sequences = []
+#        for j in range(varshape[1]):
+#            for i in range(varshape[2]):
+#                sequences.append((log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], extrap))
 
-        pool = Pool(processes=threads)
-        results = pool.map(interp_p_thread, sequences) #, chunksize=100)
-#        cleaned = [x for x in results if not x is None]
-# not optimal but safe
-        pool.close()
-        pool.join()
+#        pool = Pool(processes=threads)
+#        results = pool.map(interp_p_thread, sequences) #, chunksize=100)
+##        cleaned = [x for x in results if not x is None]
+## not optimal but safe
+#        pool.close()
+#        pool.join()
 
-        for j in range(varshape[1]):
-            for i in range(varshape[2]):
-                ij = j * varshape[2] + i
-                varout[:,j,i] = results[ij]
+#        for j in range(varshape[1]):
+#            for i in range(varshape[2]):
+#                ij = j * varshape[2] + i
+#                varout[:,j,i] = results[ij]
 
 
     varout.mask[varout == -9.99e+33] = True
@@ -240,6 +235,120 @@ def calc_destagger(var, axis=0, first_grd=False):
     return varout
 
 
+def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, first_grd=True, t=None):
+    """
+    Calculate 3-D u, v, w winds
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    rho : 3-D ndarray, optional
+        Density (kg/m3). Read from files if not given
+    momx : 3-D ndarray, optional
+        x-momentum (kg/m2/s). Read from files if not given
+    momy : 3-D ndarray, optional
+        y-momentum (kg/m2/s). Read from files if not given
+    momz : 3-D ndarray, optional
+        z-momentum (kg/m2/s). Read from files if not given
+    destaggered : bool, optional
+        * True -- Destagger momx, momy, momz before calculation (default)
+        * False -- Do not need to destagger momx, momy, momz
+    first_grd : bool, optional
+        * True -- Addtional first-row grids are provided for interpolation (default)
+        * False -- No additional first-row grid
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+
+    Returns
+    -------
+    u : 3-D ndarray
+        Destaggered u-wind (m/s)
+    v : 3-D ndarray
+        Destaggered v-wind (m/s)
+    w : 3-D ndarray
+        Destaggered w-wind (m/s)
+    momx : 3-D ndarray
+        Destaggered x-momentum (kg/m2/s)
+    momy : 3-D ndarray
+        Destaggered y-momentum (kg/m2/s)
+    momz : 3-D ndarray
+        Destaggered z-momentum (kg/m2/s)
+    """
+    if rho is None:
+        rho = sio.readvar('DENS', t=t)
+    if momx is None:
+        if first_grd:
+            momx = sio.readvar('MOMX', t=t, bufsize=0)[:,sio.bufsize:-sio.bufsize,sio.bufsize-1:-sio.bufsize]
+        else:
+            momx = sio.readvar('MOMX', t=t)
+    if momy is None:
+        if first_grd:
+            momy = sio.readvar('MOMY', t=t, bufsize=0)[:,sio.bufsize-1:-sio.bufsize,sio.bufsize:-sio.bufsize]
+        else:
+            momy = sio.readvar('MOMY', t=t)
+    if momz is None:
+        momz = sio.readvar('MOMZ', t=t)
+
+    if destagger:
+#        print(' --- destagger momx')
+        momx = calc_destagger(momx, axis=2, first_grd=first_grd)
+#        print(' --- destagger momy')
+        momy = calc_destagger(momy, axis=1, first_grd=first_grd)
+#        print(' --- destagger momz')
+        momz = calc_destagger(momz, axis=0, first_grd=False)
+    momz[0,:,:] = 0.
+
+    u = momx / rho
+    v = momy / rho
+    w = momz / rho
+
+    return u, v, w, momx, momy, momz
+
+
+def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None):
+    """
+    Calculate 3-D mixing ratio of all hydrometers
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    qc : 3-D ndarray, optional
+        Cloud water mixing ratio (kg/kg). Read from files if not given
+    qr : 3-D ndarray, optional
+        Rain mixing ratio (kg/kg). Read from files if not given
+    qi : 3-D ndarray, optional
+        Ice mixing ratio (kg/kg). Read from files if not given
+    qs : 3-D ndarray, optional
+        Snow mixing ratio (kg/kg). Read from files if not given
+    qg : 3-D ndarray, optional
+        Graupel mixing ratio (kg/kg). Read from files if not given
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+
+    Returns
+    -------
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg)
+    """
+    if qc is None:
+        qc = sio.readvar('QC', t=t)
+    if qr is None:
+        qr = sio.readvar('QR', t=t)
+    if qi is None:
+        qi = sio.readvar('QI', t=t)
+    if qs is None:
+        qs = sio.readvar('QS', t=t)
+    if qg is None:
+        qg = sio.readvar('QG', t=t)
+
+    qhydro = qc + qr + qi + qs + qg
+    return qhydro
+
+
 def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=False, t=None):
     """
     Calculate 3-D pressure, temperature, potential temperature
@@ -274,121 +383,35 @@ def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=
         Potential temperature (K)
     """
     if rho is None:
-        rho0 = sio.readvar('DENS', t=t)[:,2:-2,2:-2]
-    else:
-        rho0 = rho
+        rho = sio.readvar('DENS', t=t)
     if rhot is None:
-        rhot0 = sio.readvar('RHOT', t=t)[:,2:-2,2:-2]
-    else:
-        rhot0 = rhot
+        rhot = sio.readvar('RHOT', t=t)
     if qv is None:
-        qv0 = sio.readvar('QV', t=t)[:,2:-2,2:-2]
-    else:
-        qv0 = qv
+        qv = sio.readvar('QV', t=t)
     if qhydro is None:
-        qhydro0 = sio.readvar('QC', t=t)[:,2:-2,2:-2] \
-                + sio.readvar('QR', t=t)[:,2:-2,2:-2] \
-                + sio.readvar('QI', t=t)[:,2:-2,2:-2] \
-                + sio.readvar('QS', t=t)[:,2:-2,2:-2] \
-                + sio.readvar('QG', t=t)[:,2:-2,2:-2]
-    else:
-        qhydro0 = qhydro
+        qhydro = calc_qhydro(sio, t=t)
 
     Rdry = 287.04
     Rvap = 461.46
     CVdry = 717.60
     PRE00 = 100000.0
 
-    Rtot = Rdry * (1. - qv0 - qhydro0) + Rvap * qv0
+    Rtot = Rdry * (1. - qv - qhydro) + Rvap * qv
     CPovCV = ( CVdry + Rtot ) / CVdry
 
-    p = PRE00 * np.power(rhot0 * Rtot / PRE00, CPovCV)
+    p = PRE00 * np.power(rhot * Rtot / PRE00, CPovCV)
     res = [p]
     if tout:
-        t = p / (rho0 * Rtot)
+        t = p / (rho * Rtot)
         res.append(t)
     if thetaout:
-        theta = rhot0 / rho0
+        theta = rhot / rho
         res.append(theta)
 
     return res
 
 
-def calc_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, first_grd=True, t=None):
-    """
-    Calculate 3-D u, v, w winds
-
-    Parameters
-    ----------
-    sio : <scale.io.ScaleIO> class
-        Split SCALE I/O class
-    rho : 3-D ndarray, optional
-        Density (kg/m3). Read from files if not given
-    momx : 3-D ndarray, optional
-        x-momentum (kg/m2/s). Read from files if not given
-    momy : 3-D ndarray, optional
-        y-momentum (kg/m2/s). Read from files if not given
-    momz : 3-D ndarray, optional
-        z-momentum (kg/m2/s). Read from files if not given
-    destaggered : bool, optional
-        * True -- Destagger momx, momy, momz before calculation (default)
-        * False -- Do not need to destagger momx, momy, momz
-    first_grd : bool, optional
-        * True -- Addtional first-row grids are provided for interpolation (default)
-        * False -- No additional first-row grid
-    t : int or <datetime.datetime> class or None, optional
-        Time to read
-        * None -- all times (defalut)
-
-    Returns
-    -------
-    u : 3-D ndarray
-        u-wind (m/s)
-    v : 3-D ndarray
-        v-wind (m/s)
-    w : 3-D ndarray
-        w-wind (m/s)
-    """
-    if rho is None:
-        rho0 = sio.readvar('DENS', t=t)[:,2:-2,2:-2]
-    else:
-        rho0 = rho
-    if momx is None:
-        if first_grd:
-            momx0 = sio.readvar('MOMX', t=t)[:,2:-2,1:-2]
-        else:
-            momx0 = sio.readvar('MOMX', t=t)[:,2:-2,2:-2]
-    else:
-        momx0 = momx
-    if momy is None:
-        if first_grd:
-            momy0 = sio.readvar('MOMY', t=t)[:,1:-2,2:-2]
-        else:
-            momy0 = sio.readvar('MOMY', t=t)[:,2:-2,2:-2]
-    else:
-        momy0 = momy
-    if momz is None:
-        momz0 = sio.readvar('MOMZ', t=t)[:,2:-2,2:-2]
-    else:
-        momz0 = momz
-
-    if destagger:
-#        print(' --- destagger momx')
-        momx0 = calc_destagger(momx0, axis=2, first_grd=first_grd)
-#        print(' --- destagger momy')
-        momy0 = calc_destagger(momy0, axis=1, first_grd=first_grd)
-#        print(' --- destagger momz')
-        momz0 = calc_destagger(momz0, axis=0, first_grd=False)
-    momz0[0,:,:] = 0.
-
-    u = momx0 / rho0
-    v = momy0 / rho0
-    w = momz0 / rho0
-
-    return u, v, w, momx0, momy0, momz0
-
-
-def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
+def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
     """
     Calculate radar reflectivity
 
@@ -396,6 +419,8 @@ def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
     ----------
     sio : <scale.io.ScaleIO> class
         Split SCALE I/O class
+    min_dbz : float
+        Minimum value of the reflectivity
     rho : 3-D ndarray, optional
         Density (kg/m3). Read from files if not given
     qr : 3-D ndarray, optional
@@ -416,34 +441,23 @@ def calc_ref(sio, rho=None, qr=None, qs=None, qg=None, t=None):
         Maximum radar reflectivity in vertical (dBZ)
     """
     if rho is None:
-        rho0 = sio.readvar('DENS', t=t)[:,2:-2,2:-2]
-    else:
-        rho0 = rho
+        rho = sio.readvar('DENS', t=t)
     if qr is None:
-        qr0 = sio.readvar('QR', t=t)[:,2:-2,2:-2]
-    else:
-        qr0 = qr
+        qr = sio.readvar('QR', t=t)
     if qs is None:
-        qs0 = sio.readvar('QS', t=t)[:,2:-2,2:-2]
-    else:
-        qs0 = qs
+        qs = sio.readvar('QS', t=t)
     if qg is None:
-        qg0 = sio.readvar('QG', t=t)[:,2:-2,2:-2]
-    else:
-        qg0 = qg
+        qg = sio.readvar('QG', t=t)
 
-    qr0[qr0 < 1.e-10] = 1.e-10
-    qs0[qs0 < 1.e-10] = 1.e-10
-    qg0[qg0 < 1.e-10] = 1.e-10
-    ref = 2.53e4 * (rho0 * qr0 * 1.0e3) ** 1.84 \
-        + 3.48e3 * (rho0 * qs0 * 1.0e3) ** 1.66 \
-        + 8.18e4 * (rho0 * qg0 * 1.0e3) ** 1.50
+    qr[qr < 1.e-10] = 1.e-10
+    qs[qs < 1.e-10] = 1.e-10
+    qg[qg < 1.e-10] = 1.e-10
+    ref = 2.53e4 * (rho * qr * 1.0e3) ** 1.84 \
+        + 3.48e3 * (rho * qs * 1.0e3) ** 1.66 \
+        + 8.18e4 * (rho * qg * 1.0e3) ** 1.50
     dbz = 10. * np.log10(ref)
-    max_dbz = ma.max(dbz, axis=0)
-
-    min_dbz = -20.
     dbz[dbz < min_dbz] = min_dbz
-    max_dbz[max_dbz < min_dbz] = min_dbz
+    max_dbz = ma.max(dbz, axis=0)
 
     return dbz, max_dbz
 
@@ -476,25 +490,64 @@ def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
         Smoothed lowest-level temperature extrapolated from the free atmosphere (K)
     """
     if height is None:
-        height0 = sio.readvar('height', t=t)[:,2:-2,2:-2]
-    else:
-        height0 = height
-#    height0[0,:,:] -= 1.e-2
+        height = sio.readvar('height', t=t)
+#    height[0,:,:] -= 1.e-2
 
     varshape = list(temp.shape)
     t0_ext = np.zeros(varshape[1:3], dtype=temp.dtype)
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
-            t_ref = np.interp(height0[0,j,i]+zfree, np.copy(height0[:,j,i]), np.copy(temp[:,j,i]))
+            t_ref = np.interp(height[0,j,i]+zfree, np.copy(height[:,j,i]), np.copy(temp[:,j,i]))
             t0_ext[j,i] = t_ref + lprate * zfree
     return t0_ext
 
 
 def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
+#def extrap_z_pt(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.005, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
     """
-    Calculate extrapolated 3-D variables under the surface
+    Calculate extrapolated 3-D variables under the surface for z-level data
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    qv : 3-D ndarray, optional
+        Water vapor mixing ratio (kg/kg). Read from files if not given
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
+    p0 : 2-D ndarray
+        ......
+    t0_ext : 2-D ndarray
+        ......
+    height : 3-D ndarray
+        ......
+    lprate : float
+        ......
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+    p : 3-D ndarray, optional, return
+        Extrapolated pressure (Pa)
+        * None -- do not calculate this variable
+    tk : 3-D ndarray, optional, return
+        Extrapolated temperature (K)
+        * None -- do not calculate this variable
+    theta : 3-D ndarray, optional, return
+        Extrapolated potential temperature (K)
+        * None -- do not calculate this variable
+    rho : 3-D ndarray, optional, return
+        Extrapolated density (kg/m3) (K)
+        * None -- do not calculate this variable
+    rhot : 3-D ndarray, optional, return
+        Extrapolated rho * theta (kg/m3*K) (K)
+        * None -- do not calculate this variable
     """
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
+
     g = 9.80665
     Rdry = 287.04
     Rvap = 461.46
@@ -521,13 +574,56 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=Non
                     if theta is not None: theta[k,j,i] = theta_s
                     if rho   is not None: rho[k,j,i] = rho_s
                     if rhot  is not None: rhot[k,j,i] = rhot_s
-    return
+#    return
 
 
 def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
+#def extrap_p_zt(sio, plevels, qv=None, qhydro=None, p, t0_ext, height, lprate=0.005, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
     """
-    Calculate extrapolated 3-D variables under the surface
+    Calculate extrapolated 3-D variables under the surface for p-level data
+
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    plevels : array_like
+        ......
+    qv : 3-D ndarray, optional
+        Water vapor mixing ratio (kg/kg). Read from files if not given
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
+    p : 3-D ndarray
+        ......
+    t0_ext : 2-D ndarray
+        ......
+    height : 3-D ndarray
+        ......
+    lprate : float
+        ......
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+    z : 3-D ndarray, optional, return
+        Extrapolated height (m)
+        * None -- do not calculate this variable
+    tk : 3-D ndarray, optional, return
+        Extrapolated temperature (K)
+        * None -- do not calculate this variable
+    theta : 3-D ndarray, optional, return
+        Extrapolated potential temperature (K)
+        * None -- do not calculate this variable
+    rho : 3-D ndarray, optional, return
+        Extrapolated density (kg/m3) (K)
+        * None -- do not calculate this variable
+    rhot : 3-D ndarray, optional, return
+        Extrapolated rho * theta (kg/m3*K) (K)
+        * None -- do not calculate this variable
     """
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
+
     g = 9.80665
     Rdry = 287.04
     Rvap = 461.46
@@ -554,13 +650,42 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=Non
                     if theta is not None: theta[k,j,i] = theta_s
                     if rho   is not None: rho[k,j,i] = rho_s
                     if rhot  is not None: rhot[k,j,i] = rhot_s
-    return
+#    return
 
 
 def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None):
+#def calc_slp(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.005, t=None):
     """
-    Calculate extrapolated 3-D variables under the surface
+    Calculate sea level pressure
+
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    qv : 3-D ndarray, optional
+        Water vapor mixing ratio (kg/kg). Read from files if not given
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
+    p0 : 2-D ndarray
+        ......
+    t0_ext : 2-D ndarray
+        ......
+    height : 3-D ndarray
+        ......
+    lprate : float
+        ......
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+
+    Returns
+    -------
+    slp : 2-D ndarray
+        Sea level pressure (Pa)
     """
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
+
     g = 9.80665
     Rdry = 287.04
     Rvap = 461.46

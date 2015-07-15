@@ -11,6 +11,9 @@ __all__ = ['scale_dimlist', 'scale_dimlist_g', 'scale_file_suffix',
            'scale_read', 'scale_write', 'ScaleIO']
 
 
+show_cache_use = True
+
+
 scale_dimlist = [
 ['time', 'time1'],
 ['nv'],
@@ -334,7 +337,7 @@ class ScaleIO:
     ----------
     ***
     """
-    def __init__(self, basename, mode='r', year=None, cache=False):
+    def __init__(self, basename, mode='r', year=None, bufsize=0, cache=False):
         """
         Parameters
         ----------
@@ -347,13 +350,15 @@ class ScaleIO:
         year : integer
             Year of the data.
             * None -- the current year (default)
+        bufsize : int
+            Unused grid numbers near the lateral boundary (default: 0)
         cache : bool
             Option to cache the data read into the memory.
             * False -- do not cache (default)
             * True -- cache
         """
         if year is None:
-            year = dt.datetime.now().year
+            self.year = dt.datetime.now().year
         self.nproc, self.rootgrps, self.dimdef = scale_open(basename, mode)
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         if self.dimdef['len']['time'][0] is None:
@@ -361,13 +366,15 @@ class ScaleIO:
         else:
             time_array = scale_read(self.nproc, self.rootgrps, self.dimdef, 'time')[1]
             self.t = np.empty_like(time_array, dtype='O')
-#            self.t = [scale_gettime(i, year) for i in time_array]
+#            self.t = [scale_gettime(i, self.year) for i in time_array]
             for it in range(len(time_array)):
-                self.t[it] = scale_gettime(time_array[it], year)
+                self.t[it] = scale_gettime(time_array[it], self.year)
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         self.zh = scale_read(self.nproc, self.rootgrps, self.dimdef, 'zh')[1]
         self.lon = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lon')[1]
         self.lat = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lat')[1]
+        assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
+        self.bufsize = bufsize
         if cache:
             self.cache = {}
 
@@ -379,7 +386,16 @@ class ScaleIO:
             pass
 
 
-    def readvar(self, varname, t=None):
+    def freecache(self):
+        if hasattr(self, 'cache'):
+            del self.cache
+            self.cache = {}
+        else:
+            import warnings
+            warnings.warn('Cache is not enabled.')
+
+
+    def readvar(self, varname, t=None, bufsize=None):
         """
         Read a variable from a set of split SCALE files.
 
@@ -390,6 +406,10 @@ class ScaleIO:
         t : int or <datetime.datetime> class or None, optional
             Time to read
             * None -- all times (defalut)
+        bufsize : int
+            Unused grid numbers near the lateral boundary
+            * None -- use the bufsize given at the object initialization
+                      (default)
 
         Returns
         -------
@@ -414,29 +434,39 @@ class ScaleIO:
 
             if varname in self.cache:
                 if tkey in self.cache[varname]:
-                    if tkey == 'all':
-                        print('*** read from cache: {:s} ***'.format(varname))
-                    else:
-                        print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
-                    return self.cache[varname][tkey]
+                    if show_cache_use:
+                        if tkey == 'all':
+                            print('*** read from cache: {:s} ***'.format(varname))
+                        else:
+                            print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
+                    res = self.cache[varname][tkey]
                 elif 'all' in self.cache[varname] and tkey != 'all':
-                    print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
-                    return self.cache[varname]['all'][tkey]
+                    if show_cache_use:
+                        print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
+                    res = self.cache[varname]['all'][tkey]
                 else:
                     if tkey == 'all':
                         del self.cache[varname]
                         self.cache[varname] = {}
                     self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
-                    return self.cache[varname][tkey]
+                    res = self.cache[varname][tkey]
             else:
                 self.cache[varname] = {}
                 self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
-                return self.cache[varname][tkey]
+                res = self.cache[varname][tkey]
+        else:
+            res = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
 
-        return scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
+        if bufsize is None:
+            bufsize = self.bufsize
+        assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
+        if bufsize == 0 or len(res.shape) < 2:
+            return res
+        else:
+            return res[[slice(None)] * (len(res.shape)-2) + [slice(bufsize, -bufsize), slice(bufsize, -bufsize)]]
 
 
-    def writevar(self, varname, vardata, t=None):
+    def writevar(self, varname, vardata, t=None, bufsize=None):
         """
         Write a variable to a set of split SCALE files.
         Assume the input dimensions are consistent.
@@ -449,5 +479,17 @@ class ScaleIO:
             Variable data to be written to the files.
         t : int or <datetime.datetime> class or None, optional
             Time to read. None for all times. Defalut: None
+        bufsize : int
+            Unused grid numbers near the lateral boundary
+            * None -- use the bufsize given at the object initialization
+                      (default)
         """
-        scale_write(self.nproc, self.rootgrps, self.dimdef, varname, vardata, t=t)
+        if bufsize is None:
+            bufsize = self.bufsize
+        assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
+        if bufsize == 0 or len(res.shape) < 2:
+            scale_write(self.nproc, self.rootgrps, self.dimdef, varname, vardata, t=t)
+        else:
+            tmpdata = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
+            tmpdata[[slice(None)] * (len(tmpdata.shape)-2) + [slice(bufsize, -bufsize), slice(bufsize, -bufsize)]] = vardata
+            scale_write(self.nproc, self.rootgrps, self.dimdef, varname, tmpdata, t=t)
