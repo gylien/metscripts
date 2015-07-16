@@ -4,10 +4,10 @@ import os
 #from .io import ScaleIO
 from .grads import convert
 
-try:
-    from mpi4py import MPI
-except ImportError:
-    pass
+#try:
+#    from mpi4py import MPI
+#except ImportError:
+#    pass
 
 
 __all__ = ['letkfout_grads']
@@ -93,7 +93,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                 ctlfile = None  
 
                         convert("{:s}/{:s}/{:s}/{:s}/init".format(letkfoutdir, timef, ityp, im),
-                                topo=topofile, gradsfile=gradsfile, ctlfile=ctlfile, t=time, tint=tint
+                                topo=topofile, gradsfile=gradsfile, ctlfile=ctlfile, t=time, tint=tint,
                                 ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap)
 
                         if ctlfile is not None:

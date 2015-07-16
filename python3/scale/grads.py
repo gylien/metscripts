@@ -7,6 +7,11 @@ from .calc import *
 import gradsio
 import sys
 
+#try:
+#    from mpi4py import MPI
+#except ImportError:
+#    pass
+
 
 __all__ = ['convert']
 
@@ -83,51 +88,80 @@ def rc(**kwargs):
             raise KeyError("'{0:s}' is not a configuration key.".format(key))
 
 
-def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datetime(2000, 1, 1), tint=dt.timedelta(hours=6), **kwargs):
+def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datetime(2000, 1, 1), tint=dt.timedelta(hours=6), comm=None, **kwargs):
     """
     """
     rc(**kwargs)
+
+    if comm is None:
+        nprocs = 1
+        myrank = 0
+    else:
+        nprocs = comm.Get_size()
+        myrank = comm.Get_rank()
+
 
     if config['ftype'] in ('history', 'history_z'):
         bufsize = 0
     else:
         bufsize = 2
-    sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=2)
+    sio = None
 
-    nx = sio.dimdef['len_g']['x']
-    ny = sio.dimdef['len_g']['y']
-    if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
-        nx -= 4
-        ny -= 4
-    nz = sio.dimdef['len']['z'][0]
-    if config['vcoor'] == 'z' or config['vcoor'] == 'o' or config['ftype'] == 'restart_sprd':
-        nzout = nz
-    elif config['vcoor'] == 'p':
-        nzout = len(config['plevels'])
-    else:
-        raise ValueError("vcoor = '{0:s}' is not supported. vcoor: {'z', 'p', 'o'}".format(config['vcoor']))
-    if sio.t is None:
-        nt = 1
-    else:
-        nt = len(sio.t)
-    print('--------------------')
-    print('nx =', nx)
-    print('ny =', ny)
-    print('nz =', nz)
-    print('nzout =', nzout)
-    print('nt =', nt)
-    print('--------------------')
+    if myrank == 0:
+        sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=2)
+
+        nx = sio.dimdef['len_g']['x']
+        ny = sio.dimdef['len_g']['y']
+        if config['ftype'] == 'restart' or config['ftype'] == 'restart_sprd':
+            nx -= 4
+            ny -= 4
+        nz = sio.dimdef['len']['z'][0]
+        if config['vcoor'] == 'z' or config['vcoor'] == 'o' or config['ftype'] == 'restart_sprd':
+            nzout = nz
+        elif config['vcoor'] == 'p':
+            nzout = len(config['plevels'])
+        else:
+            raise ValueError("vcoor = '{0:s}' is not supported. vcoor: {'z', 'p', 'o'}".format(config['vcoor']))
+        if sio.t is None:
+            nt = 1
+        else:
+            nt = len(sio.t)
+        print('--------------------')
+        print('nx =', nx)
+        print('ny =', ny)
+        print('nz =', nz)
+        print('nzout =', nzout)
+        print('nt =', nt)
+        print('--------------------')
+
+    if myrank > 0:
+        nx = 0
+        ny = 0
+        nz = 0
+        nzout = 0
+        nt = 0
+    if nprocs > 1:
+        nx = comm.bcast(nx, root=0)
+        ny = comm.bcast(ny, root=0)
+        nz = comm.bcast(nz, root=0)
+        nzout = comm.bcast(nzout, root=0)
+        nt = comm.bcast(nt, root=0)
 
 
-    its = config['tstart']
-    ite = config['tend']
-    tskip = config['tskip']
-    if ite == -1:
-        ite = nt
+    its_a = config['tstart']
+    ite_a = config['tend']
+    tskip_a = config['tskip']
+    if ite_a == -1:
+        ite_a = nt
+    nto_a = len(range(its_a, ite_a, tskip_a))
+
+    its = its_a + tskip_a * myrank
+    ite = ite_a
+    tskip = tskip_a * nprocs
     nto = len(range(its, ite, tskip))
 
 
-    if ctlfile is not None:
+    if myrank == 0 and ctlfile is not None:
         print('Generate CTL file')
 
         if bufsize == 0:
@@ -162,7 +196,7 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
         else:
             ts = sio.t[0]
             if len(sio.t) > 1:
-                tint = (sio.t[1] - sio.t[0]) * tskip
+                tint = (sio.t[1] - sio.t[0]) * tskip_a
 
         if 'basepoint_x' in config['proj'] and config['proj']['basepoint_x'] is None:
             iref = 0.5*(nx+1)
@@ -180,10 +214,8 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
                slon=config['proj']['basepoint_lon'], dx=dx, dy=dy)
 
         varstr = ''
-#        for ivar in varout_3d_final:
         for ivar in config['varout_3d']:
             varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=nzout, dscr=var_3d[ivar])
-#        for ivar in varout_2d_final:
         for ivar in config['varout_2d']:
             varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d[ivar])
 
@@ -213,11 +245,10 @@ vars {nvar:d}
         'latint': latint,
         'nz':     nzout,
         'levs':   levs,
-        'nto':     nto,
+        'nto':     nto_a,
         'ts':     ts.strftime('%H:%MZ%d%b%Y'),
         'tint':   '{0:d}mn'.format(int(round(tint.total_seconds() / 60)))	,
         'pdef':   pdef,
-#        'nvar':   len(varout_3d_final) + len(varout_2d_final),
         'nvar':   len(config['varout_3d']) + len(config['varout_2d']),
         'varstr': varstr
         }
@@ -226,261 +257,286 @@ vars {nvar:d}
             fc.write(template.format(**context))
 
 
+    if nto > 0:
+        if sio is None:
+            sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=2)
 
+        necessary = []
+        if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
+            necessary += ['z']
+            if config['extrap']:
+                necessary += ['p', 'tk', 'theta', 'rho', 'rhot', 'qv', 'qhydro']
 
-
-    necessary = []
-    if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
-        necessary += ['z']
-        if config['extrap']:
-            necessary += ['p', 'tk', 'theta', 'rho', 'rhot', 'qv', 'qhydro']
-
-    if config['vcoor'] == 'p' and config['ftype'] != 'restart_sprd':
-        necessary += ['p']
-        if config['extrap']:
-            necessary += ['z', 'tk', 'theta', 'rho', 'rhot', 'qv', 'qhydro']
-#        if 'qhydro' in config['varout_3d']:
-#            necessary += ['qc', 'qr', 'qi', 'qs', 'qg']
-        if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
-            necessary += ['rho', 'qr', 'qs', 'qg']
-
-    var = {}
-    var_itp = {}
-    if config['ftype'] != 'restart_sprd':
-        if topo is None:
-#            print('Read variable: TOPO')
-            if config['ftype'] == 'restart':
-                var['topo'] = sio.readvar('TOPO')
-            elif config['ftype'] == 'history':
-                var['topo'] = sio.readvar('topo')
-        elif type(topo) is str :
-            sio_topo = ScaleIO(topo, cache=True, bufsize=2, verbose=2)
-#            print('Read variable: TOPO')
-            var['topo'] = sio_topo.readvar('TOPO')
-        else:
-            var['topo'] = topo
-
-
-    f = open(gradsfile, 'wb')
-
-    ito = 0
-    for it in range(its, ite, tskip):
-        if config['ftype'] == 'restart':
-            for ivar, ivarf in ('rho', 'DENS'), ('rhot', 'RHOT'), \
-                               ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
-#                print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                var[ivar] = sio.readvar(ivarf, t=it)
-            for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'):
-#                print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                var[ivar] = sio.readvar(ivarf, t=it)
-
-            print('Calculate: destaggered u, v, w, momx, momy, momz')
-#            var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
-#                calc_destagger_uvw(sio, rho=var['rho'], momx=var['momx'], momy=var['momy'], momz=var['momz'], first_grd=True, t=it)
-            var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
-                calc_destagger_uvw(sio, first_grd=True, t=it)
-
-            print('Calculate: qhydro')
-            var['qhydro'] = calc_qhydro(sio, t=it)
-
-            print('Calculate: p, t, theta')
-#            var['p'], var['tk'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
-            var['p'], var['tk'], var['theta'] = calc_pt(sio, qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
-
+        if config['vcoor'] == 'p' and config['ftype'] != 'restart_sprd':
+            necessary += ['p']
+            if config['extrap']:
+                necessary += ['z', 'tk', 'theta', 'rho', 'rhot', 'qv', 'qhydro']
+    #        if 'qhydro' in config['varout_3d']:
+    #            necessary += ['qc', 'qr', 'qi', 'qs', 'qg']
             if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
-                print('Calculate: dbz, max_dbz')
-#                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
-                var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
+                necessary += ['rho', 'qr', 'qs', 'qg']
 
-            print('Calculate: z')
-            var['z'], height_h = calc_height(sio, topo=var['topo'])
+        var = {}
+        var_itp = {}
+        if config['ftype'] != 'restart_sprd':
+            if topo is None:
+    #            print('Read variable: TOPO')
+                if config['ftype'] == 'restart':
+                    var['topo'] = sio.readvar('TOPO')
+                elif config['ftype'] == 'history':
+                    var['topo'] = sio.readvar('topo', t=0)
+            elif type(topo) is str :
+                sio_topo = ScaleIO(topo, cache=True, bufsize=2, verbose=2)
+    #            print('Read variable: TOPO')
+                var['topo'] = sio_topo.readvar('TOPO')
+                del sio_topo
+            else:
+                var['topo'] = topo
 
-            if 'rhosfc' in config['varout_2d'] or 'psfc' in config['varout_2d']:
-                print('Calculate: rhosfc, psfc')
-#                var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
-                var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
 
-            if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
-                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
-                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
+        if myrank == 0:
+            f = open(gradsfile, 'wb')
 
-                if 'slp' in config['varout_2d']:
-                    print('Calculate: slp')
-#                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
-#                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
-                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
-                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
-
-        elif config['ftype'] == 'restart_sprd':
-            for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('tk', 'MOMZ'), ('p', 'RHOT'), \
-                               ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
-                if ivar in config['varout_3d']:
-#                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
+        ito = 0
+        for it in range(its, ite, tskip):
+            if config['ftype'] == 'restart':
+                for ivar, ivarf in ('rho', 'DENS'), ('rhot', 'RHOT'), \
+                                   ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
+    #                print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
+                    var[ivar] = sio.readvar(ivarf, t=it)
+                for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'):
+    #                print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
                     var[ivar] = sio.readvar(ivarf, t=it)
 
-            print('Destagger: u, v, w')
-            if 'u' in config['varout_3d']:
-                var['u'] = calc_destagger(var['u'], axis=2, first_grd=False)
-            if 'v' in config['varout_3d']:
-                var['v'] = calc_destagger(var['v'], axis=1, first_grd=False)
-            if 'w' in config['varout_3d']:
-                var['w'] = calc_destagger(var['w'], axis=0, first_grd=False)
-                var['w'][0,:,:] = 0.
+                print('Calculate: destaggered u, v, w, momx, momy, momz')
+    #            var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
+    #                calc_destagger_uvw(sio, rho=var['rho'], momx=var['momx'], momy=var['momy'], momz=var['momz'], first_grd=True, t=it)
+                var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
+                    calc_destagger_uvw(sio, first_grd=True, t=it)
 
-        elif config['ftype'] == 'history':
-            for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
-                               ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), ('qhydro', 'QHYD'), \
-                               ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'), ('rh', 'RH'):
-                if ivar in config['varout_3d'] or ivar in necessary:
-#                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                    var[ivar] = sio.readvar(ivarf, t=it)
-            for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
-                               ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'):
-                if ivar in config['varout_2d'] or ivar in necessary:
-#                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                    var[ivar] = sio.readvar(ivarf, t=it)
-
-            for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
-                if ivar in config['varout_2d'] or ivar in necessary:
-                    iits = max(it-tskip+1, 0)
-#                    print('Read variable: ' + ivarf + ' [t = ' + str(iits) + ']')
-                    var[ivar] = sio.readvar(ivarf, t=iits)
-                    for iit in range(iits+1, it+1):
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(iit) + ']')
-                        var[ivar] += sio.readvar(ivarf, t=iit)
-                    var[ivar] /= (it - iits + 1)
-
-            if 'qhydro' in config['varout_3d'] and 'qhydro' not in var:
                 print('Calculate: qhydro')
                 var['qhydro'] = calc_qhydro(sio, t=it)
-            if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
-                print('Calculate: dbz, max_dbz')
-#                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
-                var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
 
-            print('Calculate: z')
-            var['z'], height_h = calc_height(sio, topo=var['topo'])
+                print('Calculate: p, t, theta')
+    #            var['p'], var['tk'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
+                var['p'], var['tk'], var['theta'] = calc_pt(sio, qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
 
-#            if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
-#                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
-#                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
+                if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
+                    print('Calculate: dbz, max_dbz')
+    #                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
+                    var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
 
-#                if 'slp' in config['varout_2d']:
-#                    print('Calculate: slp')
-#                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
-#                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
+                print('Calculate: z')
+                var['z'], height_h = calc_height(sio, topo=var['topo'])
 
-        elif config['ftype'] == 'history_z':
-            sys.exit('not done yet...')
+                if 'rhosfc' in config['varout_2d'] or 'psfc' in config['varout_2d']:
+                    print('Calculate: rhosfc, psfc')
+    #                var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
+                    var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
 
-        else:
-            raise ValueError("ftype = '{0:s}' is not supported. ftype: {'restart', 'restart_sprd', 'history', 'history_z'}".format(config['ftype']))
+                if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+                    print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+                    t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
 
+                    if 'slp' in config['varout_2d']:
+                        print('Calculate: slp')
+    #                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
+    #                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
+                        var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
+                                              p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
 
-
-
-        # do not consider 'history_z'...
-        # require: var['z']
-        #  <extrap> var['p'], var['tk'], var['theta'], var['rho'], var['rhot'], var['qv'], var['qhydro']
-        if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
-            for ivar in var:
-#                if ivar != 'z' and (ivar in config['varout_3d'] or ivar in ['p', 'tk', 'theta', 'rho', 'rhot']):
-                if ivar != 'z' and (ivar in config['varout_3d']):
-                    print('Vertical interpolation at Z-coordinate: ', ivar)
-                    var_itp[ivar] = interp_z(sio, var[ivar], height=var['z'], t=it, extrap=config['extrap'])
-            if 'z' in config['varout_3d']:
-                var_itp['z'] = np.empty((len(sio.z), ny, nx), dtype=sio.z.dtype)
-                for ilev in range(len(sio.z)):
-                    var_itp['z'][ilev] = sio.z[ilev]
-
-            if config['extrap']:
-                kws = {}
-                kwslist = ''
-                for ivar in ['p', 'tk', 'theta', 'rho', 'rhot']:
+            elif config['ftype'] == 'restart_sprd':
+                for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('tk', 'MOMZ'), ('p', 'RHOT'), \
+                                   ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
                     if ivar in config['varout_3d']:
-                        kws[ivar] = var_itp[ivar]
-                        kwslist += ivar + ', '
-#                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
-#                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
-                print(' Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
-                extrap_z_pt(sio, qv=var['qv'], qhydro=var['qhydro'], p0=var['p'][0], \
-                            t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it, **kws)
+    #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
+                        var[ivar] = sio.readvar(ivarf, t=it)
 
+                print('Destagger: u, v, w')
+                if 'u' in config['varout_3d']:
+                    var['u'] = calc_destagger(var['u'], axis=2, first_grd=False)
+                if 'v' in config['varout_3d']:
+                    var['v'] = calc_destagger(var['v'], axis=1, first_grd=False)
+                if 'w' in config['varout_3d']:
+                    var['w'] = calc_destagger(var['w'], axis=0, first_grd=False)
+                    var['w'][0,:,:] = 0.
 
+            elif config['ftype'] == 'history':
+                for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
+                                   ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), ('qhydro', 'QHYD'), \
+                                   ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'), ('rh', 'RH'):
+                    if ivar in config['varout_3d'] or ivar in necessary:
+    #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
+                        var[ivar] = sio.readvar(ivarf, t=it)
+                for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
+                                   ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'):
+                    if ivar in config['varout_2d'] or ivar in necessary:
+    #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
+                        var[ivar] = sio.readvar(ivarf, t=it)
 
+                for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
+                    if ivar in config['varout_2d'] or ivar in necessary:
+                        iits = max(it-tskip_a+1, 0)
+    #                    print('Read variable: ' + ivarf + ' [t = ' + str(iits) + ']')
+                        var[ivar] = sio.readvar(ivarf, t=iits)
+                        for iit in range(iits+1, it+1):
+    #                        print('Read variable: ' + ivarf + ' [t = ' + str(iit) + ']')
+                            var[ivar] += sio.readvar(ivarf, t=iit)
+                        var[ivar] /= (it - iits + 1)
 
-        # do not consider 'history_z'...
-        # require: var['p']
-        #  <extrap> var['z'], var['tk'], var['theta'], var['rho'], var['rhot'], var['qv'], var['qhydro']
-        if config['vcoor'] == 'p' and config['ftype'] != 'restart_sprd':
+                if 'qhydro' in config['varout_3d'] and 'qhydro' not in var:
+                    print('Calculate: qhydro')
+                    var['qhydro'] = calc_qhydro(sio, t=it)
+                if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
+                    print('Calculate: dbz, max_dbz')
+    #                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
+                    var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
 
-            for ivar in var:
-                if ivar != 'p' and (ivar in config['varout_3d']):
-                    print('Vertical interpolation at P-coordinate: ', ivar)
-                    var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'])
+                print('Calculate: z')
+                var['z'], height_h = calc_height(sio, topo=var['topo'])
 
-            if 'p' in config['varout_3d']:
-                varshape = list(var[config['varout_3d'][0]].shape)
-                varshape[0] = len(config['plevels'])
-                var_itp['p'] = np.empty(varshape, dtype=var[ivar].dtype)
-                for ilev in range(len(config['plevels'])):
-                    var_itp['p'][ilev] = config['plevels'][ilev]
+    #            if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+    #                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+    #                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
 
-            if config['extrap']:
-                kws = {}
-                kwslist = ''
-                for ivar in ['z', 'tk', 'theta', 'rho', 'rhot']:
-                    if ivar in config['varout_3d']:
-                        kws[ivar] = var_itp[ivar]
-                        kwslist += ivar + ', '
-#                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
-#                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
-                print('Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
-                extrap_p_zt(sio, config['plevels'], qv=var['qv'], qhydro=var['qhydro'], p=var['p'], \
-                            t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it, **kws)
+    #                if 'slp' in config['varout_2d']:
+    #                    print('Calculate: slp')
+    #                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
+    #                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
 
-#{x: y for x, y in a.items() if y is not None}
+            elif config['ftype'] == 'history_z':
+                sys.exit('not done yet...')
 
-
-
-
-
-        varout_3d_final = []
-        varout_2d_final = []
-        if config['vcoor'] == 'o' or (config['vcoor'] == 'z' and config['ftype'] == 'history') or config['ftype'] == 'restart_sprd':
-            var_out = var
-        else:
-            var_out = var_itp
-
-        for ivar in config['varout_3d']:
-            if ivar in var_out:
-                varout_3d_final.append(ivar)
-        for ivar in config['varout_2d']:
-            if ivar in var:  # always look for 'var' (instead of 'var_out') for 2D variables
-                varout_2d_final.append(ivar)
-
-        for iv, ivar in enumerate(varout_3d_final):
-            print('Write 3D variable: {:s}'.format(ivar))
-            if type(var_out[ivar]) == ma.MaskedArray:
-                varf = var_out[ivar].filled(fill_value=config['missing'])
             else:
-                varf = var_out[ivar]
+                raise ValueError("ftype = '{0:s}' is not supported. ftype: {'restart', 'restart_sprd', 'history', 'history_z'}".format(config['ftype']))
 
-            gradsio.writegrads(f, varf, iv+1,
-                               nv3d=len(varout_3d_final), nv2d=len(varout_2d_final), t=ito+1, nx=nx, ny=ny, nz=nzout, nt=nt)
 
-        for iv, ivar in enumerate(varout_2d_final):
-            print('Write 2D variable: {:s}'.format(ivar))
-            if type(var[ivar]) == ma.MaskedArray:
-                varf = var[ivar].filled(fill_value=config['missing'])  # always look for 'var' (instead of 'var_out') for 2D variables
+            # do not consider 'history_z'...
+            # require: var['z']
+            #  <extrap> var['p'], var['tk'], var['theta'], var['rho'], var['rhot'], var['qv'], var['qhydro']
+            if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
+                for ivar in var:
+    #                if ivar != 'z' and (ivar in config['varout_3d'] or ivar in ['p', 'tk', 'theta', 'rho', 'rhot']):
+                    if ivar != 'z' and (ivar in config['varout_3d']):
+                        print('Vertical interpolation at Z-coordinate: ', ivar)
+                        var_itp[ivar] = interp_z(sio, var[ivar], height=var['z'], t=it, extrap=config['extrap'])
+                if 'z' in config['varout_3d']:
+                    var_itp['z'] = np.empty((len(sio.z), ny, nx), dtype=sio.z.dtype)
+                    for ilev in range(len(sio.z)):
+                        var_itp['z'][ilev] = sio.z[ilev]
+
+                if config['extrap']:
+                    kws = {}
+                    kwslist = ''
+                    for ivar in ['p', 'tk', 'theta', 'rho', 'rhot']:
+                        if ivar in config['varout_3d']:
+                            kws[ivar] = var_itp[ivar]
+                            kwslist += ivar + ', '
+    #                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+    #                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
+                    print(' Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
+                    extrap_z_pt(sio, qv=var['qv'], qhydro=var['qhydro'], p0=var['p'][0], \
+                                t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it, **kws)
+
+
+            # do not consider 'history_z'...
+            # require: var['p']
+            #  <extrap> var['z'], var['tk'], var['theta'], var['rho'], var['rhot'], var['qv'], var['qhydro']
+            if config['vcoor'] == 'p' and config['ftype'] != 'restart_sprd':
+
+                for ivar in var:
+                    if ivar != 'p' and (ivar in config['varout_3d']):
+                        print('Vertical interpolation at P-coordinate: ', ivar)
+                        var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'])
+
+                if 'p' in config['varout_3d']:
+                    varshape = list(var[config['varout_3d'][0]].shape)
+                    varshape[0] = len(config['plevels'])
+                    var_itp['p'] = np.empty(varshape, dtype=var[ivar].dtype)
+                    for ilev in range(len(config['plevels'])):
+                        var_itp['p'][ilev] = config['plevels'][ilev]
+
+                if config['extrap']:
+                    kws = {}
+                    kwslist = ''
+                    for ivar in ['z', 'tk', 'theta', 'rho', 'rhot']:
+                        if ivar in config['varout_3d']:
+                            kws[ivar] = var_itp[ivar]
+                            kwslist += ivar + ', '
+    #                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+    #                t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
+                    print('Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
+                    extrap_p_zt(sio, config['plevels'], qv=var['qv'], qhydro=var['qhydro'], p=var['p'], \
+                                t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it, **kws)
+
+
+            sio.freecache()
+
+
+            if config['vcoor'] == 'o' or (config['vcoor'] == 'z' and config['ftype'] == 'history') or config['ftype'] == 'restart_sprd':
+                var_out = var
             else:
-                varf = var[ivar]
-            gradsio.writegrads(f, varf, len(varout_3d_final)+iv+1,
-                               nv3d=len(varout_3d_final), nv2d=len(varout_2d_final), t=ito+1, nx=nx, ny=ny, nz=nzout, nt=nt)
+                var_out = var_itp
+            nv3d = 0
+            for ivar in config['varout_3d']:
+                if ivar not in var_out:
+                    raise ValueError("Output variable '" + ivar + "' has not been calculated.")
+                nv3d += 1
+            var3d = np.empty((nv3d, nzout, ny, nx), dtype='f4')
+            iv3d = 0
+            for ivar in config['varout_3d']:
+                if type(var_out[ivar]) == ma.MaskedArray:
+                    var3d[iv3d] = var_out[ivar].filled(fill_value=config['missing'])
+                else:
+                    var3d[iv3d] = var_out[ivar]
+                iv3d += 1
 
-        ito += 1
-#        it_prev = it
+            # always look for 'var' (instead of 'var_out') for 2D variables
+            nv2d = 0
+            for ivar in config['varout_2d']:
+                if ivar not in var:
+                    raise ValueError("Output variable '" + ivar + "' has not been calculated.")
+                nv2d += 1
+            var2d = np.empty((nv2d, ny, nx), dtype='f4')
+            iv2d = 0
+            for ivar in config['varout_2d']:
+                if type(var[ivar]) == ma.MaskedArray:
+                    var2d[iv2d] = var[ivar].filled(fill_value=config['missing'])
+                else:
+                    var2d[iv2d] = var[ivar]
+                iv2d += 1
 
-#    nto = ito
+            for n in range(nprocs):
+                it_a = its_a + tskip * ito + tskip_a * n
+                ito_a = nprocs * ito + n + 1
+                if it_a < ite_a:
+                    if n == 0:
+                        if myrank == 0:
+                            var3dout = var3d
+                            var2dout = var2d
+                    else:
+                        from mpi4py import MPI
+                        if myrank == 0:
+                            comm.Recv([var3dout, MPI.FLOAT], source=n, tag=10+n*2)
+                            comm.Recv([var2dout, MPI.FLOAT], source=n, tag=10+n*2+1)
+                        if myrank == n:
+                            comm.Send([var3d, MPI.FLOAT], dest=0, tag=10+n*2)
+                            comm.Send([var2d, MPI.FLOAT], dest=0, tag=10+n*2+1)
+                    if myrank == 0:
+                        for iv in range(nv3d):
+                            print('Write 3D variable: {:s} [to = {:d}]'.format(config['varout_3d'][iv], ito_a))
+                            gradsio.writegrads(f, var3dout[iv], iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a, nx=nx, ny=ny, nz=nzout, nt=nt)
+                        for iv in range(nv2d):
+                            print('Write 2D variable: {:s} [to = {:d}]'.format(config['varout_2d'][iv], ito_a))
+                            gradsio.writegrads(f, var2dout[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a, nx=nx, ny=ny, nz=nzout, nt=nt)
+#            if nprocs > 1:
+#                comm.Barrier()
 
-    f.close()
+            ito += 1
+
+
+        if myrank == 0:
+            f.close()
+
+    if sio is not None:
+        del sio
