@@ -1,8 +1,13 @@
 import numpy as np
 import datetime as dt
 import os
-from .io import ScaleIO
+#from .io import ScaleIO
 from .grads import convert
+
+try:
+    from mpi4py import MPI
+except ImportError:
+    pass
 
 
 __all__ = ['letkfout_grads']
@@ -10,7 +15,7 @@ __all__ = ['letkfout_grads']
 
 def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timedelta(hours=6),
                    outtype='all', member='all',
-                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-', extrap='-', tstart='-', tend='-', tskip='-', threads='-'):
+                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-', extrap='-', tstart='-', tend='-', tskip='-'):
     """
     """
     if etime is None:
@@ -88,9 +93,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                 ctlfile = None  
 
                         convert("{:s}/{:s}/{:s}/{:s}/init".format(letkfoutdir, timef, ityp, im),
-                                topo=topofile, gradsfile=gradsfile, ctlfile=ctlfile, t=time,
-                                ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap,
-                                threads=threads)
+                                topo=topofile, gradsfile=gradsfile, ctlfile=ctlfile, t=time, tint=tint
+                                ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap)
 
                         if ctlfile is not None:
                             with open(ctlfile, 'r') as f:
@@ -150,7 +154,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     #        topo=topofile, 
                             gradsfile=gradsfile, ctlfile=ctlfile, t=None,
                             ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap,
-                            tstart=tstart, tend=tend, tskip=tskip, threads=threads)
+                            tstart=tstart, tend=tend, tskip=tskip)
 
                     if ctlfile is not None:
                         if im == '0001':
@@ -171,4 +175,3 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                 f.write(ctltext)
 
         time += tint
-

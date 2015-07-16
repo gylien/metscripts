@@ -11,9 +11,6 @@ __all__ = ['scale_dimlist', 'scale_dimlist_g', 'scale_file_suffix',
            'scale_read', 'scale_write', 'ScaleIO']
 
 
-show_cache_use = True
-
-
 scale_dimlist = [
 ['time', 'time1'],
 ['nv'],
@@ -227,11 +224,6 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
                 vardim_sub[-1] = idim
                 break
 
-###
-###    print(varshape)
-###
-
-
     if all(i is None for i in vardim_sub):
         return vardim, vardata_0
     else:
@@ -252,11 +244,6 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
                 vardata[slice_obj] = vardata_0
             else:
                 vardim, vardata[slice_obj] = ncphysio.ncphys_read(rootgrps[ip], varname, dimlist=scale_dimlist, time=time, it=it)
-
-###
-###            print(varname, ip)
-###
-
 
         return vardim, vardata
 
@@ -337,7 +324,7 @@ class ScaleIO:
     ----------
     ***
     """
-    def __init__(self, basename, mode='r', year=None, bufsize=0, cache=False):
+    def __init__(self, basename, mode='r', year=None, cache=False, bufsize=0, verbose=0):
         """
         Parameters
         ----------
@@ -374,9 +361,10 @@ class ScaleIO:
         self.lon = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lon')[1]
         self.lat = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lat')[1]
         assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
-        self.bufsize = bufsize
         if cache:
             self.cache = {}
+        self.bufsize = bufsize
+        self.verbose = verbose
 
 
     def __del__(self):
@@ -395,7 +383,7 @@ class ScaleIO:
             warnings.warn('Cache is not enabled.')
 
 
-    def readvar(self, varname, t=None, bufsize=None):
+    def readvar(self, varname, t=None, bufsize=None, verbose=None):
         """
         Read a variable from a set of split SCALE files.
 
@@ -408,8 +396,13 @@ class ScaleIO:
             * None -- all times (defalut)
         bufsize : int
             Unused grid numbers near the lateral boundary
-            * None -- use the bufsize given at the object initialization
-                      (default)
+            * None -- use the setting given at object initialization (default)
+        verbose : int
+            Amount of the printing messages
+            * 0 -- No message
+            * 1 -- Show disk reading only
+            * 2 -- Show both disk reading and cache reading
+            * None -- use the setting given at object initialization (default)
 
         Returns
         -------
@@ -417,56 +410,65 @@ class ScaleIO:
             Variable data in a ndarray or masked_array (if the variable has the 
             `_FillValue` attribute).
         """
-        if hasattr(self, 'cache'):
-            if self.t is None:
-                tkey = 0
-            elif t is None:
-                tkey = 'all'
-            elif type(t) is int:
-                tkey = t
-            elif type(t) is dt.datetime:
-                try:
-                    tkey = self.t.index(t)
-                except ValueError:
-                    raise ValueError("Cannot find 't' = " + str(t))
-            else:
-                raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
+        if self.t is None:
+            tkey = 0
+            tshow = ''
+        elif t is None:
+            tkey = 'all'
+            tshow = ' [t = ALL]'
+        elif type(t) is int:
+            tkey = t
+            tshow = ' [t = {:d}]'.format(tkey)
+        elif type(t) is dt.datetime:
+            try:
+                tkey = self.t.index(t)
+                tshow = ' [t = {:d}]'.format(tkey)
+            except ValueError:
+                raise ValueError("Cannot find 't' = " + str(t))
+        else:
+            raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
+        if bufsize is None:
+            bufsize = self.bufsize
+        assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
+        if verbose is None:
+            verbose = self.verbose
 
+        if hasattr(self, 'cache'):
             if varname in self.cache:
                 if tkey in self.cache[varname]:
-                    if show_cache_use:
-                        if tkey == 'all':
-                            print('*** read from cache: {:s} ***'.format(varname))
-                        else:
-                            print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
+                    if verbose >= 2:
+                        print('Read variable: ' + varname + tshow + ' -- from cache')
                     res = self.cache[varname][tkey]
                 elif 'all' in self.cache[varname] and tkey != 'all':
-                    if show_cache_use:
-                        print('*** read from cache: {:s}[t={:s}] ***'.format(varname, str(tkey)))
+                    if verbose >= 2:
+                        print('Read variable: ' + varname + tshow + ' -- from cache')
                     res = self.cache[varname]['all'][tkey]
                 else:
+                    if verbose >= 1:
+                        print('Read variable: ' + varname + tshow)
                     if tkey == 'all':
                         del self.cache[varname]
                         self.cache[varname] = {}
                     self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
                     res = self.cache[varname][tkey]
             else:
+                if verbose >= 1:
+                    print('Read variable: ' + varname + tshow)
                 self.cache[varname] = {}
                 self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
                 res = self.cache[varname][tkey]
         else:
+            if verbose >= 1:
+                print('Read variable: ' + varname + tshow)
             res = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
 
-        if bufsize is None:
-            bufsize = self.bufsize
-        assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
         if bufsize == 0 or len(res.shape) < 2:
             return res
         else:
             return res[[slice(None)] * (len(res.shape)-2) + [slice(bufsize, -bufsize), slice(bufsize, -bufsize)]]
 
 
-    def writevar(self, varname, vardata, t=None, bufsize=None):
+    def writevar(self, varname, vardata, t=None, bufsize=None, verbose=None):
         """
         Write a variable to a set of split SCALE files.
         Assume the input dimensions are consistent.
@@ -481,12 +483,38 @@ class ScaleIO:
             Time to read. None for all times. Defalut: None
         bufsize : int
             Unused grid numbers near the lateral boundary
-            * None -- use the bufsize given at the object initialization
-                      (default)
+            * None -- use the setting given at object initialization (default)
+        verbose : int
+            Amount of the printing messages
+            * 0 -- No message
+            * 1 -- Show disk writing
+            * None -- use the setting given at object initialization (default)
         """
+        if self.t is None:
+            tkey = 0
+            tshow = ''
+        elif t is None:
+            tkey = 'all'
+            tshow = ' [t = ALL]'
+        elif type(t) is int:
+            tkey = t
+            tshow = ' [t = {:d}]'.format(tkey)
+        elif type(t) is dt.datetime:
+            try:
+                tkey = self.t.index(t)
+                tshow = ' [t = {:d}]'.format(tkey)
+            except ValueError:
+                raise ValueError("Cannot find 't' = " + str(t))
+        else:
+            raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
         if bufsize is None:
             bufsize = self.bufsize
         assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
+        if verbose is None:
+            verbose = self.verbose
+
+        if verbose >= 1:
+            print('Write variable: ' + varname + tshow)
         if bufsize == 0 or len(res.shape) < 2:
             scale_write(self.nproc, self.rootgrps, self.dimdef, varname, vardata, t=t)
         else:
