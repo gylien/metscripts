@@ -1,15 +1,80 @@
-print('hello from cython')
-
 import numpy as np
-cimport numpy as np
 import numpy.ma as ma
+import numpy.testing as npt
+from mpl_toolkits.basemap import Basemap
 
 
-__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
+__all__ = ['set_bmap', 'calc_rotate_winds', 
+           'calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
            'calc_ref', 'extrap_z_t0', 'extrap_z_pt', 'extrap_p_zt', 'calc_slp', 'calc_rhosfc_psfc']
 
 
-missingv = 1.e-33
+rsphere = 6.37122e6
+
+
+def set_bmap(sio, proj):
+    """
+    Set map projection
+
+    XXXXXX
+    """
+    llcrnrlon = sio.lon[0, 0]
+    llcrnrlat = sio.lat[0, 0]
+    urcrnrlon = sio.lon[-1, -1]
+    urcrnrlat = sio.lat[-1, -1]
+    if proj['type'] == 'LC':
+        bmap = Basemap(projection='lcc', lat_1=proj['LC_lat1'], lat_2=proj['LC_lat2'], lon_0=proj['basepoint_lon'],
+                       llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat,
+                       rsphere=rsphere)
+    else:
+        raise ValueError('[Error] Unsupport map projection.')
+
+    # verify projection setting
+    x, y = bmap(sio.lon, sio.lat)
+    x += sio.dimdef['coor_g']['x'][0]
+    y += sio.dimdef['coor_g']['y'][0]
+    for iy in range(sio.dimdef['len_g']['y']):
+        npt.assert_almost_equal(x[iy,:], sio.dimdef['coor_g']['x'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+    for ix in range(sio.dimdef['len_g']['x']):
+        npt.assert_almost_equal(y[:,ix], sio.dimdef['coor_g']['y'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+
+    return bmap
+
+
+def calc_rotate_winds(sio, bmap, u=None, v=None, t=None):
+    """
+    Calculate the rotation of u, v winds
+
+    XXXXXX
+    """
+    if u is None:
+        u = sio.readvar('U', t=t)
+    if v is None:
+        v = sio.readvar('V', t=t)
+
+    ny, nx = sio.lon.shape
+    nz = len(sio.z)
+    lon = sio.lon[sio.bufsize:ny-sio.bufsize, sio.bufsize:nx-sio.bufsize]
+    lat = sio.lon[sio.bufsize:ny-sio.bufsize, sio.bufsize:nx-sio.bufsize]
+    if nz == 3:
+        lon = np.repeat(lon[np.newaxis,:,:], nz, axis=0)
+        lat = np.repeat(lon[np.newaxis,:,:], nz, axis=0)
+
+    u_rot, v_rot = bmap.rotate_vector(u3d.ravel(), v3d.ravel(), lon.ravel(), lat.ravel())
+    if nz == 3:
+        u_rot = u_rot.reshape(nz, ny, nx)
+        v_rot = v_rot.reshape(nz, ny, nx)
+    else:
+        u_rot = u_rot.reshape(ny, nx)
+        v_rot = v_rot.reshape(ny, nx)
+
+    mag_square = u * u + v * v
+    tmpcos = (u_rot * u + v_rot * v) / mag_square
+    tmpsin = (u_rot * v - v_rot * u) / mag_square
+    u_rot = tmpcos * u - tmpsin * v
+    v_rot = tmpsin * u + tmpcos * v
+
+    return u_rot, v_rot
 
 
 def calc_height(sio, topo=None):
@@ -30,21 +95,21 @@ def calc_height(sio, topo=None):
     height_h : 3-D ndarray
         Height in half levels (m)
     """
-    topo_ = (sio.readvar('TOPO') if topo is None else topo)
+    if topo is None:
+        topo = sio.readvar('TOPO')
 
-    height = np.zeros((sio.dimdef['len']['z'][0], topo_.shape[0], topo_.shape[1]), dtype=topo_.dtype)
-    height_h = np.zeros((sio.dimdef['len']['zh'][0], topo_.shape[0], topo_.shape[1]), dtype=topo_.dtype)
+    height = np.zeros((sio.dimdef['len']['z'][0], topo.shape[0], topo.shape[1]), dtype=topo.dtype)
+    height_h = np.zeros((sio.dimdef['len']['zh'][0], topo.shape[0], topo.shape[1]), dtype=topo.dtype)
 
     for k in range(len(sio.z)):
-        height[k,:,:] = topo_ + (sio.zh[-1] - topo_) / sio.zh[-1] * sio.z[k]
+        height[k,:,:] = topo + (sio.zh[-1] - topo) / sio.zh[-1] * sio.z[k]
     for k in range(len(sio.zh)):
-        height_h[k,:,:] = topo_ + (sio.zh[-1] - topo_) / sio.zh[-1] * sio.zh[k]
+        height_h[k,:,:] = topo + (sio.zh[-1] - topo) / sio.zh[-1] * sio.zh[k]
 
     return height, height_h
 
 
-def interp_z(sio, np.ndarray[float, ndim=3] var, height=None, t=None, extrap=False):
-#def interp_z(sio, var, height=None, t=None, extrap=False):
+def interp_z(sio, var, height=None, t=None, extrap=False):
     """
     Interpolate a 3-D variable to constant z levels
 
@@ -69,56 +134,36 @@ def interp_z(sio, np.ndarray[float, ndim=3] var, height=None, t=None, extrap=Fal
     varout : 3-D ndarray
         Interpolated variable
     """
-#    if height is None:
-#        height = sio.readvar('height', t=t)
-    cdef np.ndarray[double, ndim=3] height_ = (sio.readvar('height', t=t) if height is None else height)
-    height_[0,:,:] -= 1.e-2
+    if height is None:
+        height = sio.readvar('height', t=t)
+    height[0,:,:] -= 1.e-2
 
-    cdef int nk = var.shape[0]
-    cdef int nj = var.shape[1]
-    cdef int ni = var.shape[2]
-    cdef int nko = sio.dimdef['len']['z'][0]
-#    varshape = list(var.shape)
-#    varshape[0] = sio.dimdef['len']['z'][0]
-    cdef np.ndarray[double, ndim=3] varout = np.empty((nko,nj,ni), dtype='f8')
-
-    cdef np.ndarray[double, ndim=1] zlevels = sio.z
-
-    cdef int i, j, k, k1, ko
-    for j in range(nj):
-        for i in range(ni):
-
-            k1 = 0
-            for ko in range(nko):
-                for k in range(k1, nk+1):
-                    if k == nk:
-                        break
-                    elif height_[k,j,i] > zlevels[ko]: # assume an ascending order of zlevels
-                        break
-                k1 = k
-                if k1 == 0:
-                    if extrap:
-                        varout[ko,j,i] = var[0,j,i]
-                    else:
-                        varout[ko,j,i] = missingv
-                elif k1 == nk:
-                    varout[ko,j,i] = missingv
-                else:
-                    varout[ko,j,i] = var[k1-1,j,i] + \
-                                     (var[k1,j,i] - var[k1-1,j,i]) * (zlevels[ko] - height_[k1-1,j,i]) / (height_[k1,j,i] - height_[k1-1,j,i])
-#            if extrap:
-#                varout[:,j,i] = np.interp(sio.z, np.copy(height_[:,j,i]), np.copy(var[:,j,i]), right=missingv)
-#            else:
-#                varout[:,j,i] = np.interp(sio.z, np.copy(height_[:,j,i]), np.copy(var[:,j,i]), left=missingv, right=missingv)
-
-    varout_ma = ma.masked_where(varout == missingv, varout)
+    varshape = list(var.shape)
+    varshape[0] = sio.dimdef['len']['z'][0]
+    varout = ma.masked_all(varshape, dtype=var.dtype)
     if type(var) == ma.MaskedArray:
-        varout_ma.fill_value = var.fill_value
+        varout.fill_value = var.fill_value
 
-    return varout_ma
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            if extrap:
+                varout[:,j,i] = np.interp(sio.z, np.copy(height[:,j,i]), np.copy(var[:,j,i]), right=-9.99e+33)
+#                varout[:,j,i] = np.interp(sio.z, height[:,j,i], var[:,j,i], right=-9.99e+33)
+            else:
+                varout[:,j,i] = np.interp(sio.z, np.copy(height[:,j,i]), np.copy(var[:,j,i]), left=-9.99e+33, right=-9.99e+33)
+    varout.mask[varout == -9.99e+33] = True
+
+    return varout
 
 
-def interp_p(sio, np.ndarray[float, ndim=3] var, plevels, p=None, t=None, bint extrap=False):
+#def interp_p_thread(sequence):
+#    if sequence[3]:
+#        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33)
+#    else:
+#        return np.interp(sequence[0], sequence[1], sequence[2], left=-9.99e+33, right=-9.99e+33)
+
+
+def interp_p(sio, var, plevels, p=None, t=None, extrap=False):
 #def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
     """
     Interpolate a 3-D variable to constant p levels
@@ -129,7 +174,7 @@ def interp_p(sio, np.ndarray[float, ndim=3] var, plevels, p=None, t=None, bint e
         Split SCALE I/O class
     var : 3-D ndarray
         Input variable
-    plevels : array_like, assuming a descending order (from bottom to top)
+    plevels : 1-D ndarray
         Targeted pressure levels (Pa)
     p : 3-D ndarray, optional
         Pressure in current grids (Pa). Read from files if not given
@@ -147,55 +192,56 @@ def interp_p(sio, np.ndarray[float, ndim=3] var, plevels, p=None, t=None, bint e
         Interpolated variable
     """
 
-#    if p is None:
-#        p = calc_pt(sio, tout=False, thetaout=False, t=t)[0]
-    cdef np.ndarray[float, ndim=3] p_ = (calc_pt(sio, tout=False, thetaout=False, t=t)[0] if p is None else p)
-
-    cdef int nk = var.shape[0]
-    cdef int nj = var.shape[1]
-    cdef int ni = var.shape[2]
-    cdef int nko = len(plevels)
-#    varshape = list(var.shape)
-#    varshape[0] = len(plevels)
-    cdef np.ndarray[double, ndim=3] varout = np.empty((nko,nj,ni), dtype='f8')
-
-    cdef np.ndarray[float, ndim=3] log_p = np.log(p_)
-    cdef np.ndarray[double, ndim=1] log_plevels = np.log(plevels)
-#    cdef np.ndarray[double, ndim=3] log_p_inv = np.log(np.transpose(p_, (1, 2, 0))[:,:,::-1])
-#    cdef np.ndarray[double, ndim=3] var_inv = np.copy(np.transpose(var, (1, 2, 0))[:,:,::-1])
-
-    cdef int i, j, k, k1, ko
-    for j in range(nj):
-        for i in range(ni):
-
-            k1 = 0
-            for ko in range(nko):
-                for k in range(k1, nk+1):
-                    if k == nk:
-                        break
-                    elif log_p[k,j,i] < log_plevels[ko]: # assume a descending order of plevels
-                        break
-                k1 = k
-                if k1 == 0:
-                    if extrap:
-                        varout[ko,j,i] = var[0,j,i]
-                    else:
-                        varout[ko,j,i] = missingv
-                elif k1 == nk:
-                    varout[ko,j,i] = missingv
-                else:
-                    varout[ko,j,i] = var[k1-1,j,i] + \
-                                     (var[k1,j,i] - var[k1-1,j,i]) * (log_plevels[ko] - log_p[k1-1,j,i]) / (log_p[k1,j,i] - log_p[k1-1,j,i])
-#            if extrap:
-#                varout[:,j,i] = np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=missingv)
-#            else:
-#                varout[:,j,i] = np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=missingv, right=missingv)
-
-    varout_ma = ma.masked_where(varout == missingv, varout)
+    if p is None:
+        p = calc_pt(sio, tout=False, thetaout=False, t=t)[0]
+    varshape = list(var.shape)
+    varshape[0] = len(plevels)
+    varout = ma.masked_all(varshape, dtype=var.dtype)
     if type(var) == ma.MaskedArray:
-        varout_ma.fill_value = var.fill_value
+        varout.fill_value = var.fill_value
 
-    return varout_ma
+    log_plevels = np.log(plevels)
+    log_p_inv = np.log(np.transpose(p, (1, 2, 0))[:,:,::-1])
+    var_inv = np.copy(np.transpose(var, (1, 2, 0))[:,:,::-1])
+
+#    if threads == 1:
+    for j in range(varshape[1]):
+        for i in range(varshape[2]):
+            if extrap:
+                varout[:,j,i] = np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
+            else:
+                varout[:,j,i] = np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
+#    else:
+##        def tmpfunc(ij):
+###            i = ij % varshape[2]
+###            j = ij // varshape[2]
+##            return [1., 2., 4.]
+##            if extrap:
+##                return np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33)
+##            else:
+##                return np.interp(log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], left=-9.99e+33, right=-9.99e+33)
+
+#        sequences = []
+#        for j in range(varshape[1]):
+#            for i in range(varshape[2]):
+#                sequences.append((log_plevels, log_p_inv[j,i,:], var_inv[j,i,:], extrap))
+
+#        pool = Pool(processes=threads)
+#        results = pool.map(interp_p_thread, sequences) #, chunksize=100)
+##        cleaned = [x for x in results if not x is None]
+## not optimal but safe
+#        pool.close()
+#        pool.join()
+
+#        for j in range(varshape[1]):
+#            for i in range(varshape[2]):
+#                ij = j * varshape[2] + i
+#                varout[:,j,i] = results[ij]
+
+
+    varout.mask[varout == -9.99e+33] = True
+
+    return varout
 
 
 def calc_destagger(var, axis=0, first_grd=False):
@@ -214,7 +260,7 @@ def calc_destagger(var, axis=0, first_grd=False):
 
     Returns
     -------
-    varout : ndarray
+    varout : 3-D ndarray
         Destaggered variable
     """
     if axis < 0 or axis >= var.ndim:
@@ -285,43 +331,35 @@ def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger
     momz : 3-D ndarray
         Destaggered z-momentum (kg/m2/s)
     """
-    rho_ = (sio.readvar('DENS', t=t) if rho is None else rho)
-    momz_ = (sio.readvar('MOMZ', t=t) if momz is None else momz)
+    if rho is None:
+        rho = sio.readvar('DENS', t=t)
     if momx is None:
         if first_grd:
-            momx_ = sio.readvar('MOMX', t=t, bufsize=0)[:,sio.bufsize:-sio.bufsize,sio.bufsize-1:-sio.bufsize]
+            momx = sio.readvar('MOMX', t=t, bufsize=0)[:,sio.bufsize:-sio.bufsize,sio.bufsize-1:-sio.bufsize]
         else:
-            momx_ = sio.readvar('MOMX', t=t)
-    else:
-        momx_ = momx
+            momx = sio.readvar('MOMX', t=t)
     if momy is None:
         if first_grd:
-            momy_ = sio.readvar('MOMY', t=t, bufsize=0)[:,sio.bufsize-1:-sio.bufsize,sio.bufsize:-sio.bufsize]
+            momy = sio.readvar('MOMY', t=t, bufsize=0)[:,sio.bufsize-1:-sio.bufsize,sio.bufsize:-sio.bufsize]
         else:
-            momy_ = sio.readvar('MOMY', t=t)
-    else:
-        momy_ = momy
-
-#    print(1)
+            momy = sio.readvar('MOMY', t=t)
+    if momz is None:
+        momz = sio.readvar('MOMZ', t=t)
 
     if destagger:
 #        print(' --- destagger momx')
-        momx_ = calc_destagger(momx_, axis=2, first_grd=first_grd)
+        momx = calc_destagger(momx, axis=2, first_grd=first_grd)
 #        print(' --- destagger momy')
-        momy_ = calc_destagger(momy_, axis=1, first_grd=first_grd)
+        momy = calc_destagger(momy, axis=1, first_grd=first_grd)
 #        print(' --- destagger momz')
-        momz_ = calc_destagger(momz_, axis=0, first_grd=False)
-    momz_[0,:,:] = 0.
+        momz = calc_destagger(momz, axis=0, first_grd=False)
+    momz[0,:,:] = 0.
 
-#    print(2)
+    u = momx / rho
+    v = momy / rho
+    w = momz / rho
 
-    u = momx_ / rho_
-    v = momy_ / rho_
-    w = momz_ / rho_
-
-#    print(3)
-
-    return u, v, w, momx_, momy_, momz_
+    return u, v, w, momx, momy, momz
 
 
 def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None):
@@ -351,13 +389,18 @@ def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None):
     qhydro : 3-D ndarray, optional
         Mixing ratio of all hydrometers (kg/kg)
     """
-    qc_ = (sio.readvar('QC', t=t) if qc is None else qc)
-    qr_ = (sio.readvar('QR', t=t) if qr is None else qr)
-    qi_ = (sio.readvar('QI', t=t) if qi is None else qi)
-    qs_ = (sio.readvar('QS', t=t) if qs is None else qs)
-    qg_ = (sio.readvar('QG', t=t) if qg is None else qg)
+    if qc is None:
+        qc = sio.readvar('QC', t=t)
+    if qr is None:
+        qr = sio.readvar('QR', t=t)
+    if qi is None:
+        qi = sio.readvar('QI', t=t)
+    if qs is None:
+        qs = sio.readvar('QS', t=t)
+    if qg is None:
+        qg = sio.readvar('QG', t=t)
 
-    qhydro = qc_ + qr_ + qi_ + qs_ + qg_
+    qhydro = qc + qr + qi + qs + qg
     return qhydro
 
 
@@ -394,26 +437,30 @@ def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=
     theta : 3-D ndarray, optional
         Potential temperature (K)
     """
-    rho_ = (sio.readvar('DENS', t=t) if rho is None else rho)
-    rhot_ = (sio.readvar('RHOT', t=t) if rhot is None else rhot)
-    qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    if rho is None:
+        rho = sio.readvar('DENS', t=t)
+    if rhot is None:
+        rhot = sio.readvar('RHOT', t=t)
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
 
     Rdry = 287.04
     Rvap = 461.46
     CVdry = 717.60
     PRE00 = 100000.0
 
-    Rtot = Rdry * (1. - qv_ - qhydro_) + Rvap * qv_
+    Rtot = Rdry * (1. - qv - qhydro) + Rvap * qv
     CPovCV = ( CVdry + Rtot ) / CVdry
 
-    p = PRE00 * np.power(rhot_ * Rtot / PRE00, CPovCV)
+    p = PRE00 * np.power(rhot * Rtot / PRE00, CPovCV)
     res = [p]
     if tout:
-        t = p / (rho_ * Rtot)
+        t = p / (rho * Rtot)
         res.append(t)
     if thetaout:
-        theta = rhot_ / rho_
+        theta = rhot / rho
         res.append(theta)
 
     return res
@@ -448,17 +495,21 @@ def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
     max_dbz : 2-D ndarray
         Maximum radar reflectivity in vertical (dBZ)
     """
-    rho_ = (sio.readvar('DENS', t=t) if rho is None else rho)
-    qr_ = (sio.readvar('QR', t=t) if qr is None else qr)
-    qs_ = (sio.readvar('QS', t=t) if qs is None else qs)
-    qg_ = (sio.readvar('QG', t=t) if qg is None else qg)
+    if rho is None:
+        rho = sio.readvar('DENS', t=t)
+    if qr is None:
+        qr = sio.readvar('QR', t=t)
+    if qs is None:
+        qs = sio.readvar('QS', t=t)
+    if qg is None:
+        qg = sio.readvar('QG', t=t)
 
-    qr_[qr_ < 1.e-10] = 1.e-10
-    qs_[qs_ < 1.e-10] = 1.e-10
-    qg_[qg_ < 1.e-10] = 1.e-10
-    ref = 2.53e4 * (rho_ * qr_ * 1.0e3) ** 1.84 \
-        + 3.48e3 * (rho_ * qs_ * 1.0e3) ** 1.66 \
-        + 8.18e4 * (rho_ * qg_ * 1.0e3) ** 1.50
+    qr[qr < 1.e-10] = 1.e-10
+    qs[qs < 1.e-10] = 1.e-10
+    qg[qg < 1.e-10] = 1.e-10
+    ref = 2.53e4 * (rho * qr * 1.0e3) ** 1.84 \
+        + 3.48e3 * (rho * qs * 1.0e3) ** 1.66 \
+        + 8.18e4 * (rho * qg * 1.0e3) ** 1.50
     dbz = 10. * np.log10(ref)
     dbz[dbz < min_dbz] = min_dbz
     max_dbz = ma.max(dbz, axis=0)
@@ -493,15 +544,16 @@ def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
     t0_ext : 2-D ndarray
         Smoothed lowest-level temperature extrapolated from the free atmosphere (K)
     """
-    height_ = (sio.readvar('height', t=t) if height is None else height)
-#    height_[0,:,:] -= 1.e-2
+    if height is None:
+        height = sio.readvar('height', t=t)
+#    height[0,:,:] -= 1.e-2
 
     varshape = list(temp.shape)
     t0_ext = np.zeros(varshape[1:3], dtype=temp.dtype)
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
-            t_ref = np.interp(height_[0,j,i]+zfree, np.copy(height_[:,j,i]), np.copy(temp[:,j,i]))
+            t_ref = np.interp(height[0,j,i]+zfree, np.copy(height[:,j,i]), np.copy(temp[:,j,i]))
             t0_ext[j,i] = t_ref + lprate * zfree
     return t0_ext
 
@@ -546,8 +598,10 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=Non
         Extrapolated rho * theta (kg/m3*K) (K)
         * None -- do not calculate this variable
     """
-    qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
 
     g = 9.80665
     Rdry = 287.04
@@ -555,10 +609,10 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=Non
     CVdry = 717.60
     PRE00 = 100000.0
 
-    Rtot = Rdry * (1. - qv_[0] - qhydro_[0]) + Rvap * qv_[0]
+    Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
     RovCP = Rtot / (CVdry + Rtot)
 
-    varshape = list(height.shape)
+    varshape = list(p.shape)
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
@@ -620,8 +674,10 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=Non
         Extrapolated rho * theta (kg/m3*K) (K)
         * None -- do not calculate this variable
     """
-    qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
 
     g = 9.80665
     Rdry = 287.04
@@ -629,10 +685,10 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=Non
     CVdry = 717.60
     PRE00 = 100000.0
 
-    Rtot = Rdry * (1. - qv_[0] - qhydro_[0]) + Rvap * qv_[0]
+    Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
     RovCP = Rtot / (CVdry + Rtot)
 
-    varshape = [len(plevels), height.shape[1], height.shape[2]]
+    varshape = list(z.shape)
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):
@@ -680,18 +736,20 @@ def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None):
     slp : 2-D ndarray
         Sea level pressure (Pa)
     """
-    qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    if qv is None:
+        qv = sio.readvar('QV', t=t)
+    if qhydro is None:
+        qhydro = calc_qhydro(sio, t=t)
 
     g = 9.80665
     Rdry = 287.04
     Rvap = 461.46
     PRE00 = 100000.0
 
-    Rtot = Rdry * (1. - qv_[0] - qhydro_[0]) + Rvap * qv_[0]
+    Rtot = Rdry * (1. - qv[0] - qhydro[0]) + Rvap * qv[0]
 
-    varshape = list(qv_.shape)
-    slp = np.zeros(varshape[1:3], dtype=qv_.dtype)
+    varshape = list(qv.shape)
+    slp = np.zeros(varshape[1:3], dtype=qv.dtype)
 
     for j in range(varshape[1]):
         for i in range(varshape[2]):

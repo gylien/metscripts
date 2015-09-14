@@ -2,8 +2,10 @@ import numpy as np
 import numpy.ma as ma
 import datetime as dt
 import os
+from mpl_toolkits.basemap import Basemap
 from .io import ScaleIO
 from .calc import *
+#from scale.proj import *
 import gradsio
 import sys
 
@@ -32,12 +34,13 @@ config = {
          'LC_lat2': 40.,},
 'extrap': True,
 'lprate': 0.005,
+'windrot': True,
 'tstart': 0,
 'tend': -1,
 'tskip': 1,
 }
 
-var_3d = {
+var_3d_name = {
 'u': 'u-wind (m/s)',
 'v': 'v-wind (m/s)',
 'w': 'w-wind (m/s)',
@@ -60,7 +63,7 @@ var_3d = {
 'rh': 'Relative humidity (%)',
 'dbz': 'Radar reflectivity (dBZ)'
 }
-var_2d = {
+var_2d_name = {
 'topo': 'Topography height (m)',
 'u10': '10m u-wind (m/s)',
 'v10': '10m v-wind (m/s)',
@@ -78,11 +81,24 @@ var_2d = {
 'sst': 'Temperature at uppermost ocean layer (K)'
 }
 
+var_3d = list(var_3d_name.keys())
+var_2d = list(var_2d_name.keys())
+var_3d_sprd = ['u', 'v', 'w', 'tk', 'p', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg']
+var_2d_sprd = []
+
 
 def rc(**kwargs):
     for key, value in list(kwargs.items()):
         if key in config:
-            if value != '-':
+            if value == '-':
+                pass
+            elif key == 'proj':
+                for key2, value2 in list(value.items()):
+                    if key2 in config[key]:
+                        config[key][key2] = value2
+                    else:
+                        raise KeyError("'{0:s}' is not a key of config['{1:s}'].".format(key2, key))
+            else:
                 config[key] = value
         else:
             raise KeyError("'{0:s}' is not a configuration key.".format(key))
@@ -126,6 +142,8 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             nt = 1
         else:
             nt = len(sio.t)
+        bmap = set_bmap(sio, config['proj'])
+
         print('--------------------')
         print('nx =', nx)
         print('ny =', ny)
@@ -140,13 +158,14 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
         nz = 0
         nzout = 0
         nt = 0
+        bmap = None
     if nprocs > 1:
         nx = comm.bcast(nx, root=0)
         ny = comm.bcast(ny, root=0)
         nz = comm.bcast(nz, root=0)
         nzout = comm.bcast(nzout, root=0)
         nt = comm.bcast(nt, root=0)
-
+        bmap = comm.bcast(bmap, root=0)
 
     its_a = config['tstart']
     ite_a = config['tend']
@@ -160,6 +179,12 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     tskip = tskip_a * nprocs
     nto = len(range(its, ite, tskip))
 
+    if config['ftype'] == 'restart_sprd':
+        varout_3d = [i for i in config['varout_3d'] if i in var_3d_sprd]
+        varout_2d = [i for i in config['varout_2d'] if i in var_2d_sprd]
+    else:
+        varout_3d = [i for i in config['varout_3d'] if i in var_3d]
+        varout_2d = [i for i in config['varout_2d'] if i in var_2d]
 
     if myrank == 0 and ctlfile is not None:
         print('Generate CTL file')
@@ -198,26 +223,29 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             if len(sio.t) > 1:
                 tint = (sio.t[1] - sio.t[0]) * tskip_a
 
-        if 'basepoint_x' in config['proj'] and config['proj']['basepoint_x'] is None:
-            iref = 0.5*(nx+1)
+        if config['proj']['type'] == 'LC':
+            if 'basepoint_x' in config['proj'] and config['proj']['basepoint_x'] is None:
+                iref = 0.5*(nx+1)
+            else:
+                iref = config['proj']['basepoint_x'] / float(dx) + 0.5
+            if 'basepoint_y' in config['proj'] and config['proj']['basepoint_y'] is None:
+                jref = 0.5*(ny+1)
+            else:
+                jref = config['proj']['basepoint_y'] / float(dy) + 0.5
+            pdef = 'pdef {isize:6d} {jsize:6d} lcc {latref:12.6f} {lonref:12.6f} {iref:.1f} {jref:.1f} {Struelat:12.6f} {Ntruelat:12.6f} {slon:12.6f} {dx:12.6f} {dy:12.6f}'.format(
+                   isize=nx, jsize=ny,
+                   latref=config['proj']['basepoint_lat'], lonref=config['proj']['basepoint_lon'],
+                   iref=iref, jref=jref,
+                   Struelat=config['proj']['LC_lat1'], Ntruelat=config['proj']['LC_lat2'],
+                   slon=config['proj']['basepoint_lon'], dx=dx, dy=dy)
         else:
-            iref = config['proj']['basepoint_x'] / float(dx) + 0.5
-        if 'basepoint_y' in config['proj'] and config['proj']['basepoint_y'] is None:
-            jref = 0.5*(ny+1)
-        else:
-            jref = config['proj']['basepoint_y'] / float(dy) + 0.5
-        pdef = 'pdef {isize:6d} {jsize:6d} lccr {latref:12.6f} {lonref:12.6f} {iref:.1f} {jref:.1f} {Struelat:12.6f} {Ntruelat:12.6f} {slon:12.6f} {dx:12.6f} {dy:12.6f}'.format(
-               isize=nx, jsize=ny,
-               latref=config['proj']['basepoint_lat'], lonref=config['proj']['basepoint_lon'],
-               iref=iref, jref=jref,
-               Struelat=config['proj']['LC_lat1'], Ntruelat=config['proj']['LC_lat2'],
-               slon=config['proj']['basepoint_lon'], dx=dx, dy=dy)
+            raise ValueError('[Error] Unsupport map projection.')
 
         varstr = ''
-        for ivar in config['varout_3d']:
-            varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=nzout, dscr=var_3d[ivar])
-        for ivar in config['varout_2d']:
-            varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d[ivar])
+        for ivar in varout_3d:
+            varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=nzout, dscr=var_3d_name[ivar])
+        for ivar in varout_2d:
+            varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d_name[ivar])
 
         if ctlfile is 'auto':
             ctlfile0 = '{0:s}.ctl'.format(gradsfile.rsplit('.', 1)[0])
@@ -249,7 +277,7 @@ vars {nvar:d}
         'ts':     ts.strftime('%H:%MZ%d%b%Y'),
         'tint':   '{0:d}mn'.format(int(round(tint.total_seconds() / 60)))	,
         'pdef':   pdef,
-        'nvar':   len(config['varout_3d']) + len(config['varout_2d']),
+        'nvar':   len(varout_3d) + len(varout_2d),
         'varstr': varstr
         }
 
@@ -271,10 +299,14 @@ vars {nvar:d}
             necessary += ['p']
             if config['extrap']:
                 necessary += ['z', 'tk', 'theta', 'rho', 'rhot', 'qv', 'qhydro']
-    #        if 'qhydro' in config['varout_3d']:
+    #        if 'qhydro' in varout_3d:
     #            necessary += ['qc', 'qr', 'qi', 'qs', 'qg']
-            if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
+            if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
                 necessary += ['rho', 'qr', 'qs', 'qg']
+        if 'u' in varout_3d or 'v' in varout_3d:
+            necessary += ['u', 'v']
+        if 'u10' in varout_2d or 'v10' in varout_2d:
+            necessary += ['u10', 'v10']
 
         var = {}
         var_itp = {}
@@ -313,6 +345,8 @@ vars {nvar:d}
     #                calc_destagger_uvw(sio, rho=var['rho'], momx=var['momx'], momy=var['momy'], momz=var['momz'], first_grd=True, t=it)
                 var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
                     calc_destagger_uvw(sio, first_grd=True, t=it)
+                print('Calculate: rotate u, v')
+                var['u'], var['v'] = calc_rotate_winds(sio, bmap, u=var['u'], v=var['v'], t=it)
 
                 print('Calculate: qhydro')
                 var['qhydro'] = calc_qhydro(sio, t=it)
@@ -321,7 +355,7 @@ vars {nvar:d}
     #            var['p'], var['tk'], var['theta'] = calc_pt(sio, rho=var['rho'], rhot=var['rhot'], qv=var['qv'], qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
                 var['p'], var['tk'], var['theta'] = calc_pt(sio, qhydro=var['qhydro'], tout=True, thetaout=True, t=it)
 
-                if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
+                if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
                     print('Calculate: dbz, max_dbz')
     #                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
                     var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
@@ -329,16 +363,16 @@ vars {nvar:d}
                 print('Calculate: z')
                 var['z'], height_h = calc_height(sio, topo=var['topo'])
 
-                if 'rhosfc' in config['varout_2d'] or 'psfc' in config['varout_2d']:
+                if 'rhosfc' in varout_2d or 'psfc' in varout_2d:
                     print('Calculate: rhosfc, psfc')
     #                var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
                     var['rhosfc'], var['psfc'] = calc_rhosfc_psfc(sio, rho=var['rho'], pres=var['p'], height=var['z'], topo=var['topo'], t=it)
 
-                if 'slp' in config['varout_2d'] or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+                if 'slp' in varout_2d or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
                     print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
                     t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
 
-                    if 'slp' in config['varout_2d']:
+                    if 'slp' in varout_2d:
                         print('Calculate: slp')
     #                    var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
     #                                          p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
@@ -348,16 +382,16 @@ vars {nvar:d}
             elif config['ftype'] == 'restart_sprd':
                 for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('tk', 'MOMZ'), ('p', 'RHOT'), \
                                    ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
-                    if ivar in config['varout_3d']:
+                    if ivar in varout_3d:
     #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
                         var[ivar] = sio.readvar(ivarf, t=it)
 
                 print('Destagger: u, v, w')
-                if 'u' in config['varout_3d']:
+                if 'u' in varout_3d:
                     var['u'] = calc_destagger(var['u'], axis=2, first_grd=False)
-                if 'v' in config['varout_3d']:
+                if 'v' in varout_3d:
                     var['v'] = calc_destagger(var['v'], axis=1, first_grd=False)
-                if 'w' in config['varout_3d']:
+                if 'w' in varout_3d:
                     var['w'] = calc_destagger(var['w'], axis=0, first_grd=False)
                     var['w'][0,:,:] = 0.
 
@@ -365,17 +399,24 @@ vars {nvar:d}
                 for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
                                    ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), ('qhydro', 'QHYD'), \
                                    ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'), ('rh', 'RH'):
-                    if ivar in config['varout_3d'] or ivar in necessary:
+                    if ivar in varout_3d or ivar in necessary:
     #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
                         var[ivar] = sio.readvar(ivarf, t=it)
+                if 'u' in varout_3d or 'v' in varout_3d:
+                    print('Calculate: rotate u, v')
+                    var['u'], var['v'] = calc_rotate_winds(sio, bmap, u=var['u'], v=var['v'], t=it)
+
                 for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
                                    ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'):
-                    if ivar in config['varout_2d'] or ivar in necessary:
+                    if ivar in varout_2d or ivar in necessary:
     #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
                         var[ivar] = sio.readvar(ivarf, t=it)
+                if 'u10' in varout_2d or 'v10' in varout_2d:
+                    print('Calculate: rotate u10, v10')
+                    var['u10'], var['v10'] = calc_rotate_winds(sio, bmap, u=var['u10'], v=var['v10'], t=it)
 
                 for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
-                    if ivar in config['varout_2d'] or ivar in necessary:
+                    if ivar in varout_2d or ivar in necessary:
                         iits = max(it-tskip_a+1, 0)
     #                    print('Read variable: ' + ivarf + ' [t = ' + str(iits) + ']')
                         var[ivar] = sio.readvar(ivarf, t=iits)
@@ -384,22 +425,23 @@ vars {nvar:d}
                             var[ivar] += sio.readvar(ivarf, t=iit)
                         var[ivar] /= (it - iits + 1)
 
-                if 'qhydro' in config['varout_3d'] and 'qhydro' not in var:
+                if 'qhydro' in varout_3d and 'qhydro' not in var:
                     print('Calculate: qhydro')
                     var['qhydro'] = calc_qhydro(sio, t=it)
-                if 'dbz' in config['varout_3d'] or 'max_dbz' in config['varout_2d']:
+                if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
                     print('Calculate: dbz, max_dbz')
     #                var['dbz'], var['max_dbz'] = calc_ref(sio, rho=var['rho'], qr=var['qr'], qs=var['qs'], qg=var['qg'], t=it)
                     var['dbz'], var['max_dbz'] = calc_ref(sio, t=it)
 
                 print('Calculate: z')
                 var['z'], height_h = calc_height(sio, topo=var['topo'])
+                var['z'] = var['z'].astype('f4')
 
-                if 'slp' in config['varout_2d'] and 'slp' not in var or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+                if 'slp' in varout_2d and 'slp' not in var or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
                     print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
                     t0_ext = extrap_z_t0(sio, var['tk'], lprate=config['lprate'], height=var['z'], t=it)
 
-                    if 'slp' in config['varout_2d'] and 'slp' not in var:
+                    if 'slp' in varout_2d and 'slp' not in var:
                         print('Calculate: slp')
                         var['slp'] = calc_slp(sio, qv=var['qv'], qhydro=var['qhydro'], \
                                               p0=var['p'][0], t0_ext=t0_ext, height=var['z'], lprate=config['lprate'], t=it)
@@ -416,11 +458,11 @@ vars {nvar:d}
             #  <extrap> var['p'], var['tk'], var['theta'], var['rho'], var['rhot'], var['qv'], var['qhydro']
             if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
                 for ivar in var:
-    #                if ivar != 'z' and (ivar in config['varout_3d'] or ivar in ['p', 'tk', 'theta', 'rho', 'rhot']):
-                    if ivar != 'z' and (ivar in config['varout_3d']):
+    #                if ivar != 'z' and (ivar in varout_3d or ivar in ['p', 'tk', 'theta', 'rho', 'rhot']):
+                    if ivar != 'z' and (ivar in varout_3d):
                         print('Vertical interpolation at Z-coordinate: ', ivar)
                         var_itp[ivar] = interp_z(sio, var[ivar], height=var['z'], t=it, extrap=config['extrap'])
-                if 'z' in config['varout_3d']:
+                if 'z' in varout_3d:
                     var_itp['z'] = np.empty((len(sio.z), ny, nx), dtype=sio.z.dtype)
                     for ilev in range(len(sio.z)):
                         var_itp['z'][ilev] = sio.z[ilev]
@@ -429,7 +471,7 @@ vars {nvar:d}
                     kws = {}
                     kwslist = ''
                     for ivar in ['p', 'tk', 'theta', 'rho', 'rhot']:
-                        if ivar in config['varout_3d']:
+                        if ivar in varout_3d:
                             kws[ivar] = var_itp[ivar]
                             kwslist += ivar + ', '
     #                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
@@ -445,12 +487,12 @@ vars {nvar:d}
             if config['vcoor'] == 'p' and config['ftype'] != 'restart_sprd':
 
                 for ivar in var:
-                    if ivar != 'p' and (ivar in config['varout_3d']):
+                    if ivar != 'p' and (ivar in varout_3d):
                         print('Vertical interpolation at P-coordinate: ', ivar)
                         var_itp[ivar] = interp_p(sio, var[ivar], config['plevels'], p=var['p'], t=it, extrap=config['extrap'])
 
-                if 'p' in config['varout_3d']:
-                    varshape = list(var[config['varout_3d'][0]].shape)
+                if 'p' in varout_3d:
+                    varshape = list(var[varout_3d[0]].shape)
                     varshape[0] = len(config['plevels'])
                     var_itp['p'] = np.empty(varshape, dtype=var[ivar].dtype)
                     for ilev in range(len(config['plevels'])):
@@ -460,7 +502,7 @@ vars {nvar:d}
                     kws = {}
                     kwslist = ''
                     for ivar in ['z', 'tk', 'theta', 'rho', 'rhot']:
-                        if ivar in config['varout_3d']:
+                        if ivar in varout_3d:
                             kws[ivar] = var_itp[ivar]
                             kwslist += ivar + ', '
     #                print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
@@ -473,18 +515,19 @@ vars {nvar:d}
             sio.freecache()
 
 
-            if config['vcoor'] == 'o' or (config['vcoor'] == 'z' and config['ftype'] == 'history') or config['ftype'] == 'restart_sprd':
+#            if config['vcoor'] == 'o' or (config['vcoor'] == 'z' and config['ftype'] == 'history') or config['ftype'] == 'restart_sprd': # This assumes Z_INTERP has been done in history files
+            if config['vcoor'] == 'o' or config['ftype'] == 'restart_sprd':
                 var_out = var
             else:
                 var_out = var_itp
             nv3d = 0
-            for ivar in config['varout_3d']:
+            for ivar in varout_3d:
                 if ivar not in var_out:
                     raise ValueError("Output variable '" + ivar + "' has not been calculated.")
                 nv3d += 1
             var3d = np.empty((nv3d, nzout, ny, nx), dtype='f4')
             iv3d = 0
-            for ivar in config['varout_3d']:
+            for ivar in varout_3d:
                 if type(var_out[ivar]) == ma.MaskedArray:
                     var3d[iv3d] = var_out[ivar].filled(fill_value=config['missing'])
                 else:
@@ -493,13 +536,13 @@ vars {nvar:d}
 
             # always look for 'var' (instead of 'var_out') for 2D variables
             nv2d = 0
-            for ivar in config['varout_2d']:
+            for ivar in varout_2d:
                 if ivar not in var:
                     raise ValueError("Output variable '" + ivar + "' has not been calculated.")
                 nv2d += 1
             var2d = np.empty((nv2d, ny, nx), dtype='f4')
             iv2d = 0
-            for ivar in config['varout_2d']:
+            for ivar in varout_2d:
                 if type(var[ivar]) == ma.MaskedArray:
                     var2d[iv2d] = var[ivar].filled(fill_value=config['missing'])
                 else:
@@ -524,10 +567,10 @@ vars {nvar:d}
                             comm.Send([var2d, MPI.FLOAT], dest=0, tag=10+n*2+1)
                     if myrank == 0:
                         for iv in range(nv3d):
-                            print('Write 3D variable: {:s} [to = {:d}]'.format(config['varout_3d'][iv], ito_a))
+                            print('Write 3D variable: {:s} [to = {:d}]'.format(varout_3d[iv], ito_a))
                             gradsio.writegrads(f, var3dout[iv], iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a, nx=nx, ny=ny, nz=nzout, nt=nt)
                         for iv in range(nv2d):
-                            print('Write 2D variable: {:s} [to = {:d}]'.format(config['varout_2d'][iv], ito_a))
+                            print('Write 2D variable: {:s} [to = {:d}]'.format(varout_2d[iv], ito_a))
                             gradsio.writegrads(f, var2dout[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a, nx=nx, ny=ny, nz=nzout, nt=nt)
 #            if nprocs > 1:
 #                comm.Barrier()

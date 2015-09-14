@@ -1,15 +1,89 @@
 print('hello from cython')
 
 import numpy as np
-cimport numpy as np
 import numpy.ma as ma
+import numpy.testing as npt
+from mpl_toolkits.basemap import Basemap
+
+cimport numpy as np
+cimport cython
+ctypedef fused f_real:
+    cython.float
+    cython.double
 
 
-__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
+           
+__all__ = ['set_bmap', 'calc_rotate_winds',
+           'calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
            'calc_ref', 'extrap_z_t0', 'extrap_z_pt', 'extrap_p_zt', 'calc_slp', 'calc_rhosfc_psfc']
 
 
 missingv = 1.e-33
+rsphere = 6.37122e6
+
+
+def set_bmap(sio, proj):
+    """
+    Set map projection
+
+    XXXXXX
+    """
+    llcrnrlon = sio.lon[0, 0]
+    llcrnrlat = sio.lat[0, 0]
+    urcrnrlon = sio.lon[-1, -1]
+    urcrnrlat = sio.lat[-1, -1]
+    if proj['type'] == 'LC':
+        bmap = Basemap(projection='lcc', lat_1=proj['LC_lat1'], lat_2=proj['LC_lat2'], lon_0=proj['basepoint_lon'],
+                       llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat,
+                       rsphere=rsphere)
+    else:
+        raise ValueError('[Error] Unsupport map projection.')
+
+    # verify projection setting
+    x, y = bmap(sio.lon, sio.lat)
+    x += sio.dimdef['coor_g']['x'][0]
+    y += sio.dimdef['coor_g']['y'][0]
+    for iy in range(sio.dimdef['len_g']['y']):
+        npt.assert_almost_equal(x[iy,:], sio.dimdef['coor_g']['x'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+    for ix in range(sio.dimdef['len_g']['x']):
+        npt.assert_almost_equal(y[:,ix], sio.dimdef['coor_g']['y'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+
+    return bmap
+
+
+def calc_rotate_winds(sio, bmap, u=None, v=None, t=None):
+    """
+    Calculate the rotation of u, v winds
+
+    XXXXXX
+    """
+    if u is None:
+        u = sio.readvar('U', t=t)
+    if v is None:
+        v = sio.readvar('V', t=t)
+
+    if sio.bufsize == 0:
+        lon = np.copy(sio.lon)
+        lat = np.copy(sio.lat)
+    else:
+        lon = np.copy(sio.lon[sio.bufsize:-sio.bufsize, sio.bufsize:-sio.bufsize])
+        lat = np.copy(sio.lat[sio.bufsize:-sio.bufsize, sio.bufsize:-sio.bufsize])
+    ny, nx = lon.shape
+
+    if len(u.shape) == 3:
+        nz = u.shape[0]
+        lon = np.repeat(lon[np.newaxis,:,:], nz, axis=0)
+        lat = np.repeat(lat[np.newaxis,:,:], nz, axis=0)
+
+    u_rot, v_rot = bmap.rotate_vector(u, v, lon, lat)
+
+    mag_square = u * u + v * v
+    tmpcos = (u_rot * u + v_rot * v) / mag_square
+    tmpsin = (u_rot * v - v_rot * u) / mag_square
+    u_rot = (tmpcos * u - tmpsin * v).astype(u.dtype)
+    v_rot = (tmpsin * u + tmpcos * v).astype(u.dtype)
+
+    return u_rot, v_rot
 
 
 def calc_height(sio, topo=None):
@@ -43,7 +117,7 @@ def calc_height(sio, topo=None):
     return height, height_h
 
 
-def interp_z(sio, np.ndarray[float, ndim=3] var, height=None, t=None, extrap=False):
+def interp_z(sio, np.ndarray[f_real, ndim=3] var, height=None, t=None, extrap=False):
 #def interp_z(sio, var, height=None, t=None, extrap=False):
     """
     Interpolate a 3-D variable to constant z levels
@@ -118,7 +192,7 @@ def interp_z(sio, np.ndarray[float, ndim=3] var, height=None, t=None, extrap=Fal
     return varout_ma
 
 
-def interp_p(sio, np.ndarray[float, ndim=3] var, plevels, p=None, t=None, bint extrap=False):
+def interp_p(sio, np.ndarray[f_real, ndim=3] var, plevels, p=None, t=None, bint extrap=False):
 #def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
     """
     Interpolate a 3-D variable to constant p levels
@@ -149,7 +223,7 @@ def interp_p(sio, np.ndarray[float, ndim=3] var, plevels, p=None, t=None, bint e
 
 #    if p is None:
 #        p = calc_pt(sio, tout=False, thetaout=False, t=t)[0]
-    cdef np.ndarray[float, ndim=3] p_ = (calc_pt(sio, tout=False, thetaout=False, t=t)[0] if p is None else p)
+    cdef np.ndarray[f_real, ndim=3] p_ = (calc_pt(sio, tout=False, thetaout=False, t=t)[0] if p is None else p)
 
     cdef int nk = var.shape[0]
     cdef int nj = var.shape[1]
@@ -159,7 +233,7 @@ def interp_p(sio, np.ndarray[float, ndim=3] var, plevels, p=None, t=None, bint e
 #    varshape[0] = len(plevels)
     cdef np.ndarray[double, ndim=3] varout = np.empty((nko,nj,ni), dtype='f8')
 
-    cdef np.ndarray[float, ndim=3] log_p = np.log(p_)
+    cdef np.ndarray[f_real, ndim=3] log_p = np.log(p_)
     cdef np.ndarray[double, ndim=1] log_plevels = np.log(plevels)
 #    cdef np.ndarray[double, ndim=3] log_p_inv = np.log(np.transpose(p_, (1, 2, 0))[:,:,::-1])
 #    cdef np.ndarray[double, ndim=3] var_inv = np.copy(np.transpose(var, (1, 2, 0))[:,:,::-1])
