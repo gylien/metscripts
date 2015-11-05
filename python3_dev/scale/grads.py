@@ -24,7 +24,7 @@ config = {
 'vcoor': 'p',
 'plevels': [100000., 92500., 85000., 70000., 50000., 30000., 20000., 10000., 5000., 2000., 1000.],
 'varout_3d': ['u', 'v', 'w', 'p', 'tk', 'theta', 'rho', 'momx', 'momy', 'momz', 'rhot', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'],
-'varout_2d': ['topo', 'rhosfc', 'psfc', 'slp', 'rain', 'snow', 'max_dbz'],
+'varout_2d': ['topo', 'rhosfc', 'psfc', 'slp', 'rain', 'snow', 'max_dbz', 'glon', 'glat'],
 'proj': {'type': 'LC',
          'basepoint_lon': 135.,
          'basepoint_lat': 35.,
@@ -78,7 +78,9 @@ var_2d_name = {
 'olr': 'TOA net longwave radiation flux (W/m^2)',
 'tsfc': 'Surface skin temperature (merged) (K)',
 'tsfcocean': 'Ocean surface skin temperature (K)',
-'sst': 'Temperature at uppermost ocean layer (K)'
+'sst': 'Temperature at uppermost ocean layer (K)',
+'glon': 'Longitude (degree)',
+'glat': 'Latitude (degree)'
 }
 
 var_3d = list(var_3d_name.keys())
@@ -223,6 +225,10 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
             if len(sio.t) > 1:
                 tint = (sio.t[1] - sio.t[0]) * tskip_a
 
+        tint_min = int(round(tint.total_seconds() / 60))
+        if tint_min == 0:
+            tint_min = 1
+
         if config['proj']['type'] == 'LC':
             if 'basepoint_x' in config['proj'] and config['proj']['basepoint_x'] is None:
                 iref = 0.5*(nx+1)
@@ -257,7 +263,7 @@ undef {undef:e}
 xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
 ydef {nyout:6d} linear {lats:12.6f} {latint:12.6f}
 zdef {nz:6d} levels
-{levs:s}tdef {nto:6d} linear {ts:s} {tint:s}
+{levs:s}tdef {nto:6d} linear {ts:s} {tint:d}mn
 {pdef:s}
 vars {nvar:d}
 {varstr:s}endvars
@@ -273,9 +279,9 @@ vars {nvar:d}
         'latint': latint,
         'nz':     nzout,
         'levs':   levs,
-        'nto':     nto_a,
+        'nto':    nto_a,
         'ts':     ts.strftime('%H:%MZ%d%b%Y'),
-        'tint':   '{0:d}mn'.format(int(round(tint.total_seconds() / 60)))	,
+        'tint':   tint_min,
         'pdef':   pdef,
         'nvar':   len(varout_3d) + len(varout_2d),
         'varstr': varstr
@@ -336,9 +342,10 @@ vars {nvar:d}
                                    ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
     #                print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
                     var[ivar] = sio.readvar(ivarf, t=it)
-                for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'):
-    #                print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                    var[ivar] = sio.readvar(ivarf, t=it)
+                for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'), ('glon', 'lon'), ('glat', 'lat'):
+                    if ivar in varout_2d or ivar in necessary:
+    #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
+                        var[ivar] = sio.readvar(ivarf, t=it)
 
                 print('Calculate: destaggered u, v, w, momx, momy, momz')
     #            var['u'], var['v'], var['w'], var['momx'], var['momy'], var['momz'] = \
@@ -407,7 +414,7 @@ vars {nvar:d}
                     var['u'], var['v'] = calc_rotate_winds(sio, bmap, u=var['u'], v=var['v'], t=it)
 
                 for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
-                                   ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'):
+                                   ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'), ('glon', 'lon'), ('glat', 'lat'):
                     if ivar in varout_2d or ivar in necessary:
     #                    print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
                         var[ivar] = sio.readvar(ivarf, t=it)
