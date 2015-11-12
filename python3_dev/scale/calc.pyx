@@ -540,7 +540,7 @@ def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
     return dbz, max_dbz
 
 
-def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
+def extrap_z_t0(sio, temp, lprate=0.0065, zfree=200., height=None, t=None):
     """
     Calculate smoothed lowest-level surface temperature extrapolated from 
     the free atmosphere
@@ -553,7 +553,7 @@ def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
         Input temperature (K)
     lprate : float, optional
         Assumed lapse rate (K/m). Default: 0.005
-    zfree : float,optional
+    zfree : float, optional
         Reference height of free atmosphere above the surface (m).
         Default: 1000.
     height : 3-D ndarray, optional
@@ -580,8 +580,8 @@ def extrap_z_t0(sio, temp, lprate=0.005, zfree=1000., height=None, t=None):
     return t0_ext
 
 
-def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
-#def extrap_z_pt(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.005, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
+def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
+#def extrap_z_pt(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.0065, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
     """
     Calculate extrapolated 3-D variables under the surface for z-level data
 
@@ -652,8 +652,8 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None, p=Non
 #    return
 
 
-def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
-#def extrap_p_zt(sio, plevels, qv=None, qhydro=None, p, t0_ext, height, lprate=0.005, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
+def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.0065, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
+#def extrap_p_zt(sio, plevels, qv=None, qhydro=None, p, t0_ext, height, lprate=0.0065, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
     """
     Calculate extrapolated 3-D variables under the surface for p-level data
 
@@ -726,8 +726,8 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.005, t=Non
 #    return
 
 
-def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.005, t=None):
-#def calc_slp(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.005, t=None):
+def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None):
+#def calc_slp(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.0065, t=None):
     """
     Calculate sea level pressure
 
