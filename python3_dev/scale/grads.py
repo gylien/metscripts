@@ -106,6 +106,149 @@ def rc(**kwargs):
             raise KeyError("'{0:s}' is not a configuration key.".format(key))
 
 
+def convert_sub(sio, bmap, topo, ftype, lprate, varout_3d, varout_2d, necessary, it, tskip_a, dryrun=False, myrankmsg=''):
+    """
+    """
+    X = {}
+    t0_ext = None
+    X['topo'] = topo
+
+    if ftype == 'restart':
+        for ivar, ivarf in ('rho', 'DENS'), ('rhot', 'RHOT'), \
+                           ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
+            if ivar in varout_3d or ivar in necessary:
+                X[ivar] = sio.readvar(ivarf, t=it)
+        for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'), ('glon', 'lon'), ('glat', 'lat'):
+            if ivar in varout_2d or ivar in necessary:
+                X[ivar] = sio.readvar(ivarf, t=it)
+
+        if 'u' in varout_3d or 'v' in varout_3d:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: destaggered u, v, w, momx, momy, momz')
+            X['u'], X['v'], X['w'], X['momx'], X['momy'], X['momz'] = \
+                calc_destagger_uvw(sio, first_grd=True, t=it, dryrun=dryrun)
+            if not dryrun:
+                print(myrankmsg, 'Calculate: rotate u, v')
+                X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
+
+        if not dryrun:
+            print(myrankmsg, 'Calculate: qhydro')
+        X['qhydro'] = calc_qhydro(sio, t=it, dryrun=dryrun)
+
+        if not dryrun:
+            print(myrankmsg, 'Calculate: p, t, theta')
+        X['p'], X['tk'], X['theta'] = calc_pt(sio, qhydro=X['qhydro'], tout=True, thetaout=True, t=it, dryrun=dryrun)
+
+        if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: dbz, max_dbz')
+            X['dbz'], X['max_dbz'] = calc_ref(sio, t=it, dryrun=dryrun)
+
+        if not dryrun:
+            print(myrankmsg, 'Calculate: z')
+        X['z'], height_h = calc_height(sio, topo=X['topo'], dryrun=dryrun)
+
+        if 'rhosfc' in varout_2d or 'psfc' in varout_2d:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: rhosfc, psfc')
+                X['rhosfc'], X['psfc'] = calc_rhosfc_psfc(sio, rho=X['rho'], pres=X['p'], height=X['z'], topo=X['topo'], t=it)
+
+        if 'slp' in varout_2d or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+            if not dryrun:
+                print(myrankmsg, 'Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+                t0_ext = extrap_z_t0(sio, X['tk'], lprate=lprate, height=X['z'], t=it)
+
+            if 'slp' in varout_2d:
+                if not dryrun:
+                    print(myrankmsg, 'Calculate: slp')
+                    X['slp'] = calc_slp(sio, p0=X['p'][0], t0_ext=t0_ext, height=X['z'], 
+                                        qv=X['qv'], qhydro=X['qhydro'], lprate=lprate, t=it)
+
+    elif ftype == 'restart_sprd':
+        for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('tk', 'MOMZ'), ('p', 'RHOT'), \
+                           ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
+            if ivar in varout_3d:
+                X[ivar] = sio.readvar(ivarf, t=it)
+
+        if not dryrun:
+            print(myrankmsg, 'Destagger: u, v, w')
+            if 'u' in varout_3d:
+                X['u'] = calc_destagger(X['u'], axis=2, first_grd=False)
+            if 'v' in varout_3d:
+                X['v'] = calc_destagger(X['v'], axis=1, first_grd=False)
+            if 'w' in varout_3d:
+                X['w'] = calc_destagger(X['w'], axis=0, first_grd=False)
+                X['w'][0,:,:] = 0.
+
+    elif ftype == 'history':
+        for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
+                           ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), ('qhydro', 'QHYD'), \
+                           ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'), ('rh', 'RH'):
+            if ivar in varout_3d or ivar in necessary:
+                X[ivar] = sio.readvar(ivarf, t=it)
+
+        if 'u' in varout_3d or 'v' in varout_3d:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: rotate u, v')
+                X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
+
+        for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
+                           ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'), ('glon', 'lon'), ('glat', 'lat'):
+            if ivar in varout_2d or ivar in necessary:
+                X[ivar] = sio.readvar(ivarf, t=it)
+
+        if 'u10' in varout_2d or 'v10' in varout_2d:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: rotate u10, v10')
+                X['u10'], X['v10'] = calc_rotate_winds(sio, bmap, u=X['u10'], v=X['v10'], t=it)
+
+        for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
+            if ivar in varout_2d or ivar in necessary:
+                iits = max(it-tskip_a+1, 0)
+                if dryrun:
+                    for iit in range(iits, it+1):
+                        sio.readvar(ivarf, t=iit)
+                else:
+                    X[ivar] = sio.readvar(ivarf, t=iits)
+                    for iit in range(iits+1, it+1):
+                        X[ivar] += sio.readvar(ivarf, t=iit)
+                    X[ivar] /= (it - iits + 1)
+
+        if 'qhydro' in varout_3d and 'qhydro' not in X:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: qhydro')
+            X['qhydro'] = calc_qhydro(sio, t=it, dryrun=dryrun)
+        if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: dbz, max_dbz')
+            X['dbz'], X['max_dbz'] = calc_ref(sio, t=it, dryrun=dryrun)
+
+        if not dryrun:
+            print(myrankmsg, 'Calculate: z')
+        X['z'], height_h = calc_height(sio, topo=X['topo'], dryrun=dryrun)
+        if not dryrun:
+            X['z'] = X['z'].astype('f4')
+
+        if 'slp' in varout_2d and 'slp' not in X or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
+            if not dryrun:
+                print(myrankmsg, 'Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+            t0_ext = extrap_z_t0(sio, X['tk'], lprate=lprate, height=X['z'], t=it, dryrun=dryrun)
+
+            if 'slp' in varout_2d and 'slp' not in X:
+                if not dryrun:
+                    print(myrankmsg, 'Calculate: slp')
+                X['slp'] = calc_slp(sio, p0=X['p'][0], t0_ext=t0_ext, height=X['z'],
+                                    qv=X['qv'], qhydro=X['qhydro'], lprate=lprate, t=it, dryrun=dryrun)
+
+    elif ftype == 'history_z':
+        sys.exit('not done yet...')
+
+    else:
+        raise ValueError("ftype = '{0:s}' is not supported. ftype: {'restart', 'restart_sprd', 'history', 'history_z'}".format(ftype))
+
+    return X, t0_ext
+
+
 def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datetime(2000, 1, 1), tint=dt.timedelta(hours=6), comm=None, **kwargs):
     """
     """
@@ -116,12 +259,12 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     if comm is None:
         nprocs = 1
         myrank = 0
-        print('** mpi4py ** Not used.')
+        myrankmsg = ''
     else:
         nprocs = comm.Get_size()
         myrank = comm.Get_rank()
-        print('** mpi4py ** Total processes = {:d}'.format(nprocs))
-        print('** mpi4py ** My rank         = {:d}'.format(myrank))
+        print('<< My rank / total processes = {:d} / {:d} >>'.format(myrank, nprocs))
+        myrankmsg = '<< Rank {:6d} >> '.format(myrank)
 
     # Initial settings
     #------------
@@ -140,7 +283,7 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     # then broadcast the dimensions to other processes
     #------------
     if myrank == 0:
-        sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=2)
+        sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=1)
 
         nx = sio.dimdef['len_g']['x']
         ny = sio.dimdef['len_g']['y']
@@ -305,9 +448,6 @@ vars {nvar:d}
     # Main computation
     #------------
     if nto > 0:
-        if sio is None:
-            sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=2)
-
         necessary = []
         if config['vcoor'] == 'z' and config['ftype'] != 'restart_sprd':
             necessary += ['z']
@@ -326,146 +466,50 @@ vars {nvar:d}
             necessary += ['u', 'v']
         if 'u10' in varout_2d or 'v10' in varout_2d:
             necessary += ['u10', 'v10']
+        if config['ftype'] == 'restart':
+            if 'psfc' in varout_2d:
+                necessary += ['rho', 'p', 'z']
 
-        X = {}
-        Xitp = {}
-        if config['ftype'] != 'restart_sprd':
-            if topo is None:
-                if config['ftype'] == 'restart':
-                    X['topo'] = sio.readvar('TOPO')
-                elif config['ftype'] == 'history':
-                    X['topo'] = sio.readvar('topo', t=0)
-            elif type(topo) is str :
-                sio_topo = ScaleIO(topo, cache=True, bufsize=2, verbose=2)
-                X['topo'] = sio_topo.readvar('TOPO')
-                del sio_topo
-            else:
-                X['topo'] = topo
-
-
-        if myrank == 0:
-            f = open(gradsfile, 'wb')
+        dummy = np.zeros(1)
 
         ito = 0
         for it in range(its, ite, tskip):
-            if config['ftype'] == 'restart':
-                for ivar, ivarf in ('rho', 'DENS'), ('rhot', 'RHOT'), \
-                                   ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
-                    if ivar in varout_3d or ivar in necessary:
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                        X[ivar] = sio.readvar(ivarf, t=it)
-                for ivar, ivarf in ('rain', 'SFLX_rain'), ('snow', 'SFLX_snow'), ('glon', 'lon'), ('glat', 'lat'):
-                    if ivar in varout_2d or ivar in necessary:
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                        X[ivar] = sio.readvar(ivarf, t=it)
+            it_a = its_a + tskip * ito + tskip_a * myrank
+            ito_a = nprocs * ito + myrank
 
-                if 'u' in varout_3d or 'v' in varout_3d:
-                    print('Calculate: destaggered u, v, w, momx, momy, momz')
-                    X['u'], X['v'], X['w'], X['momx'], X['momy'], X['momz'] = \
-                        calc_destagger_uvw(sio, first_grd=True, t=it)
-                    print('Calculate: rotate u, v')
-                    X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
+            # read data in 'dryrun' mode, one process follows the previous process sequentially
+            ######
+            if comm is not None and ito_a >= 1:
+                srank = myrank-1
+                if srank < 0:
+                    srank = nprocs-1
+                comm.Recv(dummy, source=srank, tag=10+ito_a-1)
+            ######
+            if sio is None:
+                sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=1)
+            if config['ftype'] != 'restart_sprd':
+                if topo is None:
+                    if config['ftype'] == 'restart':
+                        topo = sio.readvar('TOPO')
+                    elif config['ftype'] == 'history':
+                        topo = sio.readvar('topo', t=0)
+                elif type(topo) is str :
+                    sio_topo = ScaleIO(topo, cache=True, bufsize=2, verbose=1)
+                    topo = sio_topo.readvar('TOPO')
+                    del sio_topo
+            X, t0_ext = convert_sub(sio, bmap, topo, config['ftype'], config['lprate'], varout_3d, varout_2d, necessary, it, tskip_a, dryrun=True)
+            ######
+            if comm is not None and ito_a+1 < nto_a:
+                drank = myrank + 1
+                if drank >= nprocs:
+                    drank = 0
+                comm.Send(dummy, dest=drank, tag=10+ito_a)
+            ######
 
-                print('Calculate: qhydro')
-                X['qhydro'] = calc_qhydro(sio, t=it)
+            # do real computation
+            X, t0_ext = convert_sub(sio, bmap, topo, config['ftype'], config['lprate'], varout_3d, varout_2d, necessary, it, tskip_a, myrankmsg=myrankmsg)
 
-                print('Calculate: p, t, theta')
-                X['p'], X['tk'], X['theta'] = calc_pt(sio, qhydro=X['qhydro'], tout=True, thetaout=True, t=it)
-
-                if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
-                    print('Calculate: dbz, max_dbz')
-                    X['dbz'], X['max_dbz'] = calc_ref(sio, t=it)
-
-                print('Calculate: z')
-                X['z'], height_h = calc_height(sio, topo=X['topo'])
-
-                if 'rhosfc' in varout_2d or 'psfc' in varout_2d:
-                    print('Calculate: rhosfc, psfc')
-                    X['rhosfc'], X['psfc'] = calc_rhosfc_psfc(sio, rho=X['rho'], pres=X['p'], height=X['z'], topo=X['topo'], t=it)
-
-                if 'slp' in varout_2d or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
-                    print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
-                    t0_ext = extrap_z_t0(sio, X['tk'], lprate=config['lprate'], height=X['z'], t=it)
-
-                    if 'slp' in varout_2d:
-                        print('Calculate: slp')
-                        X['slp'] = calc_slp(sio, qv=X['qv'], qhydro=X['qhydro'], \
-                                              p0=X['p'][0], t0_ext=t0_ext, height=X['z'], lprate=config['lprate'], t=it)
-
-            elif config['ftype'] == 'restart_sprd':
-                for ivar, ivarf in ('u', 'DENS'), ('v', 'MOMX'), ('w', 'MOMY'), ('tk', 'MOMZ'), ('p', 'RHOT'), \
-                                   ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'):
-                    if ivar in varout_3d:
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                        X[ivar] = sio.readvar(ivarf, t=it)
-
-                print('Destagger: u, v, w')
-                if 'u' in varout_3d:
-                    X['u'] = calc_destagger(X['u'], axis=2, first_grd=False)
-                if 'v' in varout_3d:
-                    X['v'] = calc_destagger(X['v'], axis=1, first_grd=False)
-                if 'w' in varout_3d:
-                    X['w'] = calc_destagger(X['w'], axis=0, first_grd=False)
-                    X['w'][0,:,:] = 0.
-
-            elif config['ftype'] == 'history':
-                for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
-                                   ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), ('qhydro', 'QHYD'), \
-                                   ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'), ('rh', 'RH'):
-                    if ivar in varout_3d or ivar in necessary:
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                        X[ivar] = sio.readvar(ivarf, t=it)
-
-                if 'u' in varout_3d or 'v' in varout_3d:
-                    print('Calculate: rotate u, v')
-                    X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
-
-                for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
-                                   ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'), ('glon', 'lon'), ('glat', 'lat'):
-                    if ivar in varout_2d or ivar in necessary:
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(it) + ']')
-                        X[ivar] = sio.readvar(ivarf, t=it)
-
-                if 'u10' in varout_2d or 'v10' in varout_2d:
-                    print('Calculate: rotate u10, v10')
-                    X['u10'], X['v10'] = calc_rotate_winds(sio, bmap, u=X['u10'], v=X['v10'], t=it)
-
-                for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
-                    if ivar in varout_2d or ivar in necessary:
-                        iits = max(it-tskip_a+1, 0)
-#                        print('Read variable: ' + ivarf + ' [t = ' + str(iits) + ']')
-                        X[ivar] = sio.readvar(ivarf, t=iits)
-                        for iit in range(iits+1, it+1):
-#                            print('Read variable: ' + ivarf + ' [t = ' + str(iit) + ']')
-                            X[ivar] += sio.readvar(ivarf, t=iit)
-                        X[ivar] /= (it - iits + 1)
-
-                if 'qhydro' in varout_3d and 'qhydro' not in X:
-                    print('Calculate: qhydro')
-                    X['qhydro'] = calc_qhydro(sio, t=it)
-                if 'dbz' in varout_3d or 'max_dbz' in varout_2d:
-                    print('Calculate: dbz, max_dbz')
-                    X['dbz'], X['max_dbz'] = calc_ref(sio, t=it)
-
-                print('Calculate: z')
-                X['z'], height_h = calc_height(sio, topo=X['topo'])
-                X['z'] = X['z'].astype('f4')
-
-                if 'slp' in varout_2d and 'slp' not in X or (config['extrap'] and (config['vcoor'] == 'z' or config['vcoor'] == 'p')):
-                    print('Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
-                    t0_ext = extrap_z_t0(sio, X['tk'], lprate=config['lprate'], height=X['z'], t=it)
-
-                    if 'slp' in varout_2d and 'slp' not in X:
-                        print('Calculate: slp')
-                        X['slp'] = calc_slp(sio, qv=X['qv'], qhydro=X['qhydro'], \
-                                            p0=X['p'][0], t0_ext=t0_ext, height=X['z'], lprate=config['lprate'], t=it)
-
-            elif config['ftype'] == 'history_z':
-                sys.exit('not done yet...')
-
-            else:
-                raise ValueError("ftype = '{0:s}' is not supported. ftype: {'restart', 'restart_sprd', 'history', 'history_z'}".format(config['ftype']))
-
+            Xitp = {}
 
             # do not consider 'history_z'...
             # require: X['z']
@@ -474,7 +518,7 @@ vars {nvar:d}
                 for ivar in X:
 #                    if ivar != 'z' and (ivar in varout_3d or ivar in ['p', 'tk', 'theta', 'rho', 'rhot']):
                     if ivar != 'z' and (ivar in varout_3d):
-                        print('Vertical interpolation at Z-coordinate: ', ivar)
+                        print(myrankmsg, 'Vertical interpolation at Z-coordinate: ', ivar)
                         Xitp[ivar] = interp_z(sio, X[ivar], height=X['z'], t=it, extrap=config['extrap'])
                 if 'z' in varout_3d:
                     Xitp['z'] = np.empty((len(sio.z), ny, nx), dtype=sio.z.dtype)
@@ -488,9 +532,9 @@ vars {nvar:d}
                         if ivar in varout_3d:
                             kws[ivar] = Xitp[ivar]
                             kwslist += ivar + ', '
-                    print(' Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
-                    extrap_z_pt(sio, qv=X['qv'], qhydro=X['qhydro'], p0=X['p'][0], \
-                                t0_ext=t0_ext, height=X['z'], lprate=config['lprate'], t=it, **kws)
+                    print(myrankmsg, ' Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
+                    extrap_z_pt(sio, p0=X['p'][0], t0_ext=t0_ext, height=X['z'],
+                                qv=X['qv'], qhydro=X['qhydro'], lprate=config['lprate'], t=it, **kws)
 
 
             # do not consider 'history_z'...
@@ -500,7 +544,7 @@ vars {nvar:d}
 
                 for ivar in X:
                     if ivar != 'p' and (ivar in varout_3d):
-                        print('Vertical interpolation at P-coordinate: ', ivar)
+                        print(myrankmsg, 'Vertical interpolation at P-coordinate: ', ivar)
                         Xitp[ivar] = interp_p(sio, X[ivar], config['plevels'], p=X['p'], t=it, extrap=config['extrap'])
 
                 if 'p' in varout_3d:
@@ -517,9 +561,9 @@ vars {nvar:d}
                         if ivar in varout_3d:
                             kws[ivar] = Xitp[ivar]
                             kwslist += ivar + ', '
-                    print('Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
-                    extrap_p_zt(sio, config['plevels'], qv=X['qv'], qhydro=X['qhydro'], p=X['p'], \
-                                t0_ext=t0_ext, height=X['z'], lprate=config['lprate'], t=it, **kws)
+                    print(myrankmsg, 'Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
+                    extrap_p_zt(sio, config['plevels'], p=X['p'], t0_ext=t0_ext, height=X['z'],
+                                qv=X['qv'], qhydro=X['qhydro'], lprate=config['lprate'], t=it, **kws)
 
 
             sio.freecache()
@@ -559,39 +603,36 @@ vars {nvar:d}
                     X2d[iv2d] = X[ivar]
                 iv2d += 1
 
-            for n in range(nprocs):
-                it_a = its_a + tskip * ito + tskip_a * n
-                ito_a = nprocs * ito + n + 1
-                if it_a < ite_a:
-                    if n == 0:
-                        if myrank == 0:
-                            X3dr = X3d
-                            X2dr = X2d
-                    else:
-                        from mpi4py import MPI
-                        if myrank == 0:
-                            X3dr = np.empty_like(X3d)
-                            X2dr = np.empty_like(X2d)
-                            comm.Recv([X3dr, MPI.FLOAT], source=n, tag=10+n*2)
-                            comm.Recv([X2dr, MPI.FLOAT], source=n, tag=10+n*2+1)
-                        if myrank == n:
-                            comm.Send([X3d, MPI.FLOAT], dest=0, tag=10+n*2)
-                            comm.Send([X2d, MPI.FLOAT], dest=0, tag=10+n*2+1)
-                    if myrank == 0:
-                        for iv in range(nv3d):
-                            print('Write 3D variable: {:s} [to = {:d}]'.format(varout_3d[iv], ito_a))
-                            gradsio.writegrads(f, X3dr[iv], iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a, nx=nx, ny=ny, nz=nzout, nt=nt)
-                        for iv in range(nv2d):
-                            print('Write 2D variable: {:s} [to = {:d}]'.format(varout_2d[iv], ito_a))
-                            gradsio.writegrads(f, X2dr[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a, nx=nx, ny=ny, nz=nzout, nt=nt)
-#            if nprocs > 1:
-#                comm.Barrier()
+            ######
+            if comm is not None and ito_a >= 1:
+                srank = myrank-1
+                if srank < 0:
+                    srank = nprocs-1
+                comm.Recv(dummy, source=srank, tag=10+nto_a+ito_a-1)
+            ######
+            if ito_a == 0:
+                f = open(gradsfile, 'wb')
+            else:
+                f = open(gradsfile, 'r+b')
+            for iv in range(nv3d):
+                print(myrankmsg, 'Write 3D variable: {:s} [to = {:d}]'.format(varout_3d[iv], ito_a+1))
+                gradsio.writegrads(f, X3d[iv], iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nx, ny=ny, nz=nzout, nt=nt)
+            for iv in range(nv2d):
+                print(myrankmsg, 'Write 2D variable: {:s} [to = {:d}]'.format(varout_2d[iv], ito_a+1))
+                gradsio.writegrads(f, X2d[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nx, ny=ny, nz=nzout, nt=nt)
+            f.close()
+            ######
+            if comm is not None and ito_a+1 < nto_a:
+                drank = myrank + 1
+                if drank >= nprocs:
+                    drank = 0
+                comm.Send(dummy, dest=drank, tag=10+nto_a+ito_a)
+            ######
 
             ito += 1
 
-
-        if myrank == 0:
-            f.close()
+#        if myrank == 0:
+#            f.close()
 
     if sio is not None:
         del sio

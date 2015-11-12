@@ -51,16 +51,38 @@ def set_bmap(sio, proj):
     return bmap
 
 
-def calc_rotate_winds(sio, bmap, u=None, v=None, t=None):
+def calc_rotate_winds(sio, bmap, u=None, v=None, t=None, dryrun=False):
     """
     Calculate the rotation of u, v winds
 
-    XXXXXX
+    Parameters
+    ----------
+    sio : <scale.io.ScaleIO> class
+        Split SCALE I/O class
+    bmap : <mpl_toolkits.basemap.Basemap> class
+        Basemap class
+    u : 3-D ndarray, optional
+        Grid wind along i direction (m/s). Read from files if not given
+    v : 3-D ndarray, optional
+        Grid wind along j direction (m/s). Read from files if not given
+    t : int or <datetime.datetime> class or None, optional
+        Time to read
+        * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
+
+    Returns
+    -------
+    u_rot : 3-D ndarray
+        Rotated u-wind (m/s)
+    v_rot : 3-D ndarray
+        Rotated v-wind (m/s)
     """
-    if u is None:
-        u = sio.readvar('U', t=t)
-    if v is None:
-        v = sio.readvar('V', t=t)
+    u_ = (sio.readvar('U') if u is None else u)
+    v_ = (sio.readvar('V') if v is None else v)
+    if dryrun:
+        return None, None
 
     if sio.bufsize == 0:
         lon = np.copy(sio.lon)
@@ -70,23 +92,23 @@ def calc_rotate_winds(sio, bmap, u=None, v=None, t=None):
         lat = np.copy(sio.lat[sio.bufsize:-sio.bufsize, sio.bufsize:-sio.bufsize])
     ny, nx = lon.shape
 
-    if len(u.shape) == 3:
-        nz = u.shape[0]
+    if len(u_.shape) == 3:
+        nz = u_.shape[0]
         lon = np.repeat(lon[np.newaxis,:,:], nz, axis=0)
         lat = np.repeat(lat[np.newaxis,:,:], nz, axis=0)
 
-    u_rot, v_rot = bmap.rotate_vector(u, v, lon, lat)
+    u_rot, v_rot = bmap.rotate_vector(u_, v_, lon, lat)
 
-    mag_square = u * u + v * v
-    tmpcos = (u_rot * u + v_rot * v) / mag_square
-    tmpsin = (u_rot * v - v_rot * u) / mag_square
-    u_rot = (tmpcos * u - tmpsin * v).astype(u.dtype)
-    v_rot = (tmpsin * u + tmpcos * v).astype(u.dtype)
+    mag_square = u_ * u_ + v_ * v_
+    tmpcos = (u_rot * u_ + v_rot * v_) / mag_square
+    tmpsin = (u_rot * v_ - v_rot * u_) / mag_square
+    u_rot = (tmpcos * u_ - tmpsin * v_).astype(u_.dtype)
+    v_rot = (tmpsin * u_ + tmpcos * v_).astype(u_.dtype)
 
     return u_rot, v_rot
 
 
-def calc_height(sio, topo=None):
+def calc_height(sio, topo=None, dryrun=False):
     """
     Calculate the 3-D height
 
@@ -96,6 +118,9 @@ def calc_height(sio, topo=None):
         Split SCALE I/O class
     topo : 2-D ndarray, optional
         Surface height (m). Read from files if not given
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -105,6 +130,8 @@ def calc_height(sio, topo=None):
         Height in half levels (m)
     """
     topo_ = (sio.readvar('TOPO') if topo is None else topo)
+    if dryrun:
+        return None, None
 
     height = np.zeros((sio.dimdef['len']['z'][0], topo_.shape[0], topo_.shape[1]), dtype=topo_.dtype)
     height_h = np.zeros((sio.dimdef['len']['zh'][0], topo_.shape[0], topo_.shape[1]), dtype=topo_.dtype)
@@ -117,7 +144,7 @@ def calc_height(sio, topo=None):
     return height, height_h
 
 
-def interp_z(sio, np.ndarray[f_real, ndim=3] var, height=None, t=None, extrap=False):
+def interp_z(sio, np.ndarray[f_real, ndim=3] var, height=None, t=None, extrap=False, dryrun=False):
 #def interp_z(sio, var, height=None, t=None, extrap=False):
     """
     Interpolate a 3-D variable to constant z levels
@@ -137,15 +164,19 @@ def interp_z(sio, np.ndarray[f_real, ndim=3] var, height=None, t=None, extrap=Fa
         Extrapolate low values?
         * True -- do extrapolation
         * False -- do not do extrapolation (default)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
     varout : 3-D ndarray
         Interpolated variable
     """
-#    if height is None:
-#        height = sio.readvar('height', t=t)
-    cdef np.ndarray[double, ndim=3] height_ = (sio.readvar('height', t=t) if height is None else height)
+    cdef np.ndarray[f_real, ndim=3] height_ = (sio.readvar('height', t=t) if height is None else height)
+    if dryrun:
+        return None
+
     height_[0,:,:] -= 1.e-2
 
     cdef int nk = var.shape[0]
@@ -192,7 +223,7 @@ def interp_z(sio, np.ndarray[f_real, ndim=3] var, height=None, t=None, extrap=Fa
     return varout_ma
 
 
-def interp_p(sio, np.ndarray[f_real, ndim=3] var, plevels, p=None, t=None, bint extrap=False):
+def interp_p(sio, np.ndarray[f_real, ndim=3] var, plevels, p=None, t=None, bint extrap=False, dryrun=False):
 #def interp_p(sio, var, plevels, p=None, t=None, extrap=False, threads=1):
     """
     Interpolate a 3-D variable to constant p levels
@@ -214,16 +245,18 @@ def interp_p(sio, np.ndarray[f_real, ndim=3] var, plevels, p=None, t=None, bint 
         Extrapolate low values?
         * True -- do extrapolation
         * False -- do not do extrapolation (default)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
     varout : 3-D ndarray
         Interpolated variable
     """
-
-#    if p is None:
-#        p = calc_pt(sio, tout=False, thetaout=False, t=t)[0]
-    cdef np.ndarray[f_real, ndim=3] p_ = (calc_pt(sio, tout=False, thetaout=False, t=t)[0] if p is None else p)
+    cdef np.ndarray[f_real, ndim=3] p_ = (calc_pt(sio, tout=False, thetaout=False, t=t, dryrun=dryrun)[0] if p is None else p)
+    if dryrun:
+        return None
 
     cdef int nk = var.shape[0]
     cdef int nj = var.shape[1]
@@ -318,7 +351,7 @@ def calc_destagger(var, axis=0, first_grd=False):
     return varout
 
 
-def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, first_grd=True, t=None):
+def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger=True, first_grd=True, t=None, dryrun=False):
     """
     Calculate 3-D u, v, w winds
 
@@ -343,6 +376,9 @@ def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -375,8 +411,8 @@ def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger
             momy_ = sio.readvar('MOMY', t=t)
     else:
         momy_ = momy
-
-#    print(1)
+    if dryrun:
+        return None, None, None, None, None, None
 
     if destagger:
 #        print(' --- destagger momx')
@@ -398,7 +434,7 @@ def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger
     return u, v, w, momx_, momy_, momz_
 
 
-def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None):
+def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None, dryrun=False):
     """
     Calculate 3-D mixing ratio of all hydrometers
 
@@ -419,6 +455,9 @@ def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None):
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -430,12 +469,14 @@ def calc_qhydro(sio, qc=None, qr=None, qi=None, qs=None, qg=None, t=None):
     qi_ = (sio.readvar('QI', t=t) if qi is None else qi)
     qs_ = (sio.readvar('QS', t=t) if qs is None else qs)
     qg_ = (sio.readvar('QG', t=t) if qg is None else qg)
+    if dryrun:
+        return None
 
     qhydro = qc_ + qr_ + qi_ + qs_ + qg_
     return qhydro
 
 
-def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=False, t=None):
+def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=False, t=None, dryrun=False):
     """
     Calculate 3-D pressure, temperature, potential temperature
 
@@ -458,6 +499,9 @@ def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -471,7 +515,14 @@ def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=
     rho_ = (sio.readvar('DENS', t=t) if rho is None else rho)
     rhot_ = (sio.readvar('RHOT', t=t) if rhot is None else rhot)
     qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    qhydro_ = (calc_qhydro(sio, t=t, dryrun=dryrun) if qhydro is None else qhydro)
+    if dryrun:
+        res = [None]
+        if tout:
+            res.append(None)
+        if thetaout:
+            res.append(None)
+        return res
 
     Rdry = 287.04
     Rvap = 461.46
@@ -493,7 +544,7 @@ def calc_pt(sio, rho=None, rhot=None, qv=None, qhydro=None, tout=True, thetaout=
     return res
 
 
-def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
+def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None, dryrun=False):
     """
     Calculate radar reflectivity
 
@@ -514,6 +565,9 @@ def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -526,6 +580,8 @@ def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
     qr_ = (sio.readvar('QR', t=t) if qr is None else qr)
     qs_ = (sio.readvar('QS', t=t) if qs is None else qs)
     qg_ = (sio.readvar('QG', t=t) if qg is None else qg)
+    if dryrun:
+        return None, None
 
     qr_[qr_ < 1.e-10] = 1.e-10
     qs_[qs_ < 1.e-10] = 1.e-10
@@ -540,7 +596,7 @@ def calc_ref(sio, min_dbz=-20., rho=None, qr=None, qs=None, qg=None, t=None):
     return dbz, max_dbz
 
 
-def extrap_z_t0(sio, temp, lprate=0.0065, zfree=200., height=None, t=None):
+def extrap_z_t0(sio, temp, lprate=0.0065, zfree=200., height=None, t=None, dryrun=False):
     """
     Calculate smoothed lowest-level surface temperature extrapolated from 
     the free atmosphere
@@ -561,6 +617,9 @@ def extrap_z_t0(sio, temp, lprate=0.0065, zfree=200., height=None, t=None):
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -568,6 +627,9 @@ def extrap_z_t0(sio, temp, lprate=0.0065, zfree=200., height=None, t=None):
         Smoothed lowest-level temperature extrapolated from the free atmosphere (K)
     """
     height_ = (sio.readvar('height', t=t) if height is None else height)
+    if dryrun:
+        return None
+
 #    height_[0,:,:] -= 1.e-2
 
     varshape = list(temp.shape)
@@ -580,8 +642,7 @@ def extrap_z_t0(sio, temp, lprate=0.0065, zfree=200., height=None, t=None):
     return t0_ext
 
 
-def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
-#def extrap_z_pt(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.0065, t=None, p=None, tk=None, theta=None, rho=None, rhot=None):
+def extrap_z_pt(sio, p0, t0_ext, height, qv=None, qhydro=None, lprate=0.0065, t=None, p=None, tk=None, theta=None, rho=None, rhot=None, dryrun=False):
     """
     Calculate extrapolated 3-D variables under the surface for z-level data
 
@@ -589,17 +650,17 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None, p=No
     ----------
     sio : <scale.io.ScaleIO> class
         Split SCALE I/O class
-    qv : 3-D ndarray, optional
-        Water vapor mixing ratio (kg/kg). Read from files if not given
-    qhydro : 3-D ndarray, optional
-        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
     p0 : 2-D ndarray
         ......
     t0_ext : 2-D ndarray
         ......
     height : 3-D ndarray
         ......
-    lprate : float
+    qv : 3-D ndarray, optional
+        Water vapor mixing ratio (kg/kg). Read from files if not given
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
+    lprate : float, optional
         ......
     t : int or <datetime.datetime> class or None, optional
         Time to read
@@ -619,9 +680,14 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None, p=No
     rhot : 3-D ndarray, optional, return
         Extrapolated rho * theta (kg/m3*K) (K)
         * None -- do not calculate this variable
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
     """
     qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    qhydro_ = (calc_qhydro(sio, t=t, dryrun=dryrun) if qhydro is None else qhydro)
+    if dryrun:
+        return
 
     g = 9.80665
     Rdry = 287.04
@@ -652,8 +718,7 @@ def extrap_z_pt(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None, p=No
 #    return
 
 
-def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.0065, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
-#def extrap_p_zt(sio, plevels, qv=None, qhydro=None, p, t0_ext, height, lprate=0.0065, t=None, z=None, tk=None, theta=None, rho=None, rhot=None):
+def extrap_p_zt(sio, plevels, p, t0_ext, height, qv=None, qhydro=None, lprate=0.0065, t=None, z=None, tk=None, theta=None, rho=None, rhot=None, dryrun=False):
     """
     Calculate extrapolated 3-D variables under the surface for p-level data
 
@@ -663,17 +728,17 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.0065, t=No
         Split SCALE I/O class
     plevels : array_like
         ......
-    qv : 3-D ndarray, optional
-        Water vapor mixing ratio (kg/kg). Read from files if not given
-    qhydro : 3-D ndarray, optional
-        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
     p : 3-D ndarray
         ......
     t0_ext : 2-D ndarray
         ......
     height : 3-D ndarray
         ......
-    lprate : float
+    qv : 3-D ndarray, optional
+        Water vapor mixing ratio (kg/kg). Read from files if not given
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
+    lprate : float, optional
         ......
     t : int or <datetime.datetime> class or None, optional
         Time to read
@@ -693,9 +758,14 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.0065, t=No
     rhot : 3-D ndarray, optional, return
         Extrapolated rho * theta (kg/m3*K) (K)
         * None -- do not calculate this variable
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
     """
     qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    qhydro_ = (calc_qhydro(sio, t=t, dryrun=dryrun) if qhydro is None else qhydro)
+    if dryrun:
+        return
 
     g = 9.80665
     Rdry = 287.04
@@ -726,28 +796,30 @@ def extrap_p_zt(sio, plevels, qv, qhydro, p, t0_ext, height, lprate=0.0065, t=No
 #    return
 
 
-def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None):
-#def calc_slp(sio, qv=None, qhydro=None, p0, t0_ext, height, lprate=0.0065, t=None):
+def calc_slp(sio, p0, t0_ext, height, qv=None, qhydro=None, lprate=0.0065, t=None, dryrun=False):
     """
     Calculate sea level pressure
 
     sio : <scale.io.ScaleIO> class
         Split SCALE I/O class
-    qv : 3-D ndarray, optional
-        Water vapor mixing ratio (kg/kg). Read from files if not given
-    qhydro : 3-D ndarray, optional
-        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
     p0 : 2-D ndarray
         ......
     t0_ext : 2-D ndarray
         ......
     height : 3-D ndarray
         ......
-    lprate : float
+    qv : 3-D ndarray, optional
+        Water vapor mixing ratio (kg/kg). Read from files if not given
+    qhydro : 3-D ndarray, optional
+        Mixing ratio of all hydrometers (kg/kg). Read from files if not given
+    lprate : float, optional
         ......
     t : int or <datetime.datetime> class or None, optional
         Time to read
         * None -- all times (defalut)
+    dryrun : bool, optional
+        * True -- dry run mode, only reading necessary data using 'sio' class
+        * False -- do real computation (default)
 
     Returns
     -------
@@ -755,7 +827,9 @@ def calc_slp(sio, qv, qhydro, p0, t0_ext, height, lprate=0.0065, t=None):
         Sea level pressure (Pa)
     """
     qv_ = (sio.readvar('QV', t=t) if qv is None else qv)
-    qhydro_ = (calc_qhydro(sio, t=t) if qhydro is None else qhydro)
+    qhydro_ = (calc_qhydro(sio, t=t, dryrun=dryrun) if qhydro is None else qhydro)
+    if dryrun:
+        return None
 
     g = 9.80665
     Rdry = 287.04
