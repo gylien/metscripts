@@ -249,7 +249,7 @@ def convert_sub(sio, bmap, topo, ftype, lprate, varout_3d, varout_2d, necessary,
     return X, t0_ext
 
 
-def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datetime(2000, 1, 1), tint=dt.timedelta(hours=6), comm=None, **kwargs):
+def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datetime(2000, 1, 1), tint=dt.timedelta(hours=6), comm=None, sim_read=1, **kwargs):
     """
     """
     rc(**kwargs)
@@ -278,6 +278,9 @@ def convert(basename, topo=None, gradsfile='out.dat', ctlfile='auto', t=dt.datet
     else:
         varout_3d = [i for i in config['varout_3d'] if i in var_3d]
         varout_2d = [i for i in config['varout_2d'] if i in var_2d]
+
+    if sim_read <= 0 or sim_read >= nprocs:
+        sim_read = nprocs
 
     # Initialize the ScaleIO object and get dimensions using the master process,
     # then broadcast the dimensions to other processes
@@ -479,11 +482,12 @@ vars {nvar:d}
 
             # read data in 'dryrun' mode, one process follows the previous process sequentially
             ######
-            if comm is not None and ito_a >= 1:
-                srank = myrank-1
+            if comm is not None and ito_a >= sim_read:
+                srank = myrank - sim_read
                 if srank < 0:
-                    srank = nprocs-1
-                comm.Recv(dummy, source=srank, tag=10+ito_a-1)
+                    srank += nprocs
+#                print(myrankmsg, 'Recv', 10+ito_a-sim_read)
+                comm.Recv(dummy, source=srank, tag=10+ito_a-sim_read)
             ######
             if sio is None:
                 sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=1)
@@ -499,10 +503,11 @@ vars {nvar:d}
                     del sio_topo
             X, t0_ext = convert_sub(sio, bmap, topo, config['ftype'], config['lprate'], varout_3d, varout_2d, necessary, it, tskip_a, dryrun=True)
             ######
-            if comm is not None and ito_a+1 < nto_a:
-                drank = myrank + 1
+            if comm is not None and ito_a + sim_read < nto_a:
+                drank = myrank + sim_read
                 if drank >= nprocs:
-                    drank = 0
+                    drank -= nprocs
+#                print(myrankmsg, 'Send', 10+ito_a)
                 comm.Send(dummy, dest=drank, tag=10+ito_a)
             ######
 
@@ -604,11 +609,12 @@ vars {nvar:d}
                 iv2d += 1
 
             ######
-            if comm is not None and ito_a >= 1:
-                srank = myrank-1
+            if comm is not None and ito_a >= sim_read:
+                srank = myrank - sim_read
                 if srank < 0:
-                    srank = nprocs-1
-                comm.Recv(dummy, source=srank, tag=10+nto_a+ito_a-1)
+                    srank += nprocs
+#                print(myrankmsg, 'Recv', 10+nto_a+ito_a-sim_read)
+                comm.Recv(dummy, source=srank, tag=10+nto_a+ito_a-sim_read)
             ######
             if ito_a == 0:
                 f = open(gradsfile, 'wb')
@@ -622,17 +628,18 @@ vars {nvar:d}
                 gradsio.writegrads(f, X2d[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nx, ny=ny, nz=nzout, nt=nt)
             f.close()
             ######
-            if comm is not None and ito_a+1 < nto_a:
-                drank = myrank + 1
+            if comm is not None and ito_a + sim_read < nto_a:
+                drank = myrank + sim_read
                 if drank >= nprocs:
-                    drank = 0
+                    drank -= nprocs
+#                print(myrankmsg, 'Send', 10+nto_a+ito_a)
                 comm.Send(dummy, dest=drank, tag=10+nto_a+ito_a)
             ######
 
-            ito += 1
+            X.clear()
+            Xitp.clear()
 
-#        if myrank == 0:
-#            f.close()
+            ito += 1
 
     if sio is not None:
         del sio
