@@ -1,25 +1,80 @@
 import numpy as np
 import numpy.ma as ma
-from multiprocessing import Pool
+import numpy.testing as npt
+from mpl_toolkits.basemap import Basemap
 
 
-__all__ = ['calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
+__all__ = ['set_bmap', 'calc_rotate_winds', 
+           'calc_height', 'interp_z', 'interp_p', 'calc_destagger', 'calc_destagger_uvw', 'calc_qhydro', 'calc_pt',
            'calc_ref', 'extrap_z_t0', 'extrap_z_pt', 'extrap_p_zt', 'calc_slp', 'calc_rhosfc_psfc']
 
 
-##https://www.binpress.com/tutorial/simple-python-parallelism/121
-#def easy_parallize(f, sequence, threads=1):
-#    from multiprocessing import Pool
-#    pool = Pool(processes=threads)
+rsphere = 6.37122e6
 
-#    # f is given sequence. guaranteed to be in order
-#    result = pool.map(f, sequence)
-##    cleaned = [x for x in result if not x is None]
-##    cleaned = np.asarray(cleaned)
-#    # not optimal but safe
-#    pool.close()
-#    pool.join()
-#    return cleaned
+
+def set_bmap(sio, proj):
+    """
+    Set map projection
+
+    XXXXXX
+    """
+    llcrnrlon = sio.lon[0, 0]
+    llcrnrlat = sio.lat[0, 0]
+    urcrnrlon = sio.lon[-1, -1]
+    urcrnrlat = sio.lat[-1, -1]
+    if proj['type'] == 'LC':
+        bmap = Basemap(projection='lcc', lat_1=proj['LC_lat1'], lat_2=proj['LC_lat2'], lon_0=proj['basepoint_lon'],
+                       llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat,
+                       rsphere=rsphere)
+    else:
+        raise ValueError('[Error] Unsupport map projection.')
+
+    # verify projection setting
+    x, y = bmap(sio.lon, sio.lat)
+    x += sio.dimdef['coor_g']['x'][0]
+    y += sio.dimdef['coor_g']['y'][0]
+    for iy in range(sio.dimdef['len_g']['y']):
+        npt.assert_almost_equal(x[iy,:], sio.dimdef['coor_g']['x'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+    for ix in range(sio.dimdef['len_g']['x']):
+        npt.assert_almost_equal(y[:,ix], sio.dimdef['coor_g']['y'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+
+    return bmap
+
+
+def calc_rotate_winds(sio, bmap, u=None, v=None, t=None):
+    """
+    Calculate the rotation of u, v winds
+
+    XXXXXX
+    """
+    if u is None:
+        u = sio.readvar('U', t=t)
+    if v is None:
+        v = sio.readvar('V', t=t)
+
+    ny, nx = sio.lon.shape
+    nz = len(sio.z)
+    lon = sio.lon[sio.bufsize:ny-sio.bufsize, sio.bufsize:nx-sio.bufsize]
+    lat = sio.lon[sio.bufsize:ny-sio.bufsize, sio.bufsize:nx-sio.bufsize]
+    if nz == 3:
+        lon = np.repeat(lon[np.newaxis,:,:], nz, axis=0)
+        lat = np.repeat(lon[np.newaxis,:,:], nz, axis=0)
+
+    u_rot, v_rot = bmap.rotate_vector(u3d.ravel(), v3d.ravel(), lon.ravel(), lat.ravel())
+    if nz == 3:
+        u_rot = u_rot.reshape(nz, ny, nx)
+        v_rot = v_rot.reshape(nz, ny, nx)
+    else:
+        u_rot = u_rot.reshape(ny, nx)
+        v_rot = v_rot.reshape(ny, nx)
+
+    mag_square = u * u + v * v
+    tmpcos = (u_rot * u + v_rot * v) / mag_square
+    tmpsin = (u_rot * v - v_rot * u) / mag_square
+    u_rot = tmpcos * u - tmpsin * v
+    v_rot = tmpsin * u + tmpcos * v
+
+    return u_rot, v_rot
 
 
 def calc_height(sio, topo=None):

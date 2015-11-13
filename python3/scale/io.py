@@ -376,8 +376,9 @@ class ScaleIO:
 
     def freecache(self):
         if hasattr(self, 'cache'):
-            del self.cache
-            self.cache = {}
+            for ivar in self.cache:
+                self.cache[ivar].clear()
+            self.cache.clear()
         else:
             import warnings
             warnings.warn('Cache is not enabled.')
@@ -447,8 +448,7 @@ class ScaleIO:
                     if verbose >= 1:
                         print('Read variable: ' + varname + tshow)
                     if tkey == 'all':
-                        del self.cache[varname]
-                        self.cache[varname] = {}
+                        self.cache[varname].clear()
                     self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
                     res = self.cache[varname][tkey]
             else:

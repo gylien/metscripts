@@ -14,8 +14,8 @@ __all__ = ['letkfout_grads']
 
 
 def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timedelta(hours=6),
-                   outtype='all', member='all',
-                   vcoor='o', plevels='-', varout_3d='-', varout_2d='-', extrap='-', tstart='-', tend='-', tskip='-'):
+                   outtype='all', member='all', vcoor='o', plevels='-', varout_3d='-', varout_2d='-', 
+                   extrap='-', tstart='-', tend='-', tskip='-', comm=None, sim_read=1):
     """
     """
     if etime is None:
@@ -94,7 +94,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
 
                         convert("{:s}/{:s}/{:s}/{:s}/init".format(letkfoutdir, timef, ityp, im),
                                 topo=topofile, gradsfile=gradsfile, ctlfile=ctlfile, t=time, tint=tint,
-                                ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap)
+                                ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d,
+                                proj=proj, extrap=extrap, comm=comm, sim_read=sim_read)
 
                         if ctlfile is not None:
                             with open(ctlfile, 'r') as f:
@@ -153,8 +154,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     convert("{:s}/{:s}/{:s}/{:s}/history".format(letkfoutdir, timef, ityp, im),
                     #        topo=topofile, 
                             gradsfile=gradsfile, ctlfile=ctlfile, t=None,
-                            ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d, proj=proj, extrap=extrap,
-                            tstart=tstart, tend=tend, tskip=tskip)
+                            ftype=ftype, vcoor=vcoor, plevels=plevels, varout_3d=varout_3d, varout_2d=varout_2d,
+                            proj=proj, extrap=extrap, tstart=tstart, tend=tend, tskip=tskip, comm=comm, sim_read=sim_read)
 
                     if ctlfile is not None:
                         if im == '0001':
