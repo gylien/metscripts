@@ -2,6 +2,7 @@ import numpy as np
 import numpy.ma as ma
 import datetime as dt
 import os
+import time
 from mpl_toolkits.basemap import Basemap
 from scipy.interpolate import interpn
 from .io import ScaleIO
@@ -574,6 +575,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
         myrank = 0
         myrankmsg = ''
     else:
+        comm.Barrier()
         nprocs = comm.Get_size()
         myrank = comm.Get_rank()
         print('<< My rank / total processes = {:d} / {:d} >>'.format(myrank, nprocs))
@@ -776,6 +778,8 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                     if ito_a == 0:
                         f = open(gradsfile, 'wb')
                     else:
+                        while not os.path.exists(gradsfile):
+                            time.sleep(1)
                         f = open(gradsfile, 'r+b')
                     for iv in range(nv3d):
                         print(myrankmsg, 'Write 3D variable: {:s} [to = {:d}]'.format(conf['varout_3d'][iv], ito_a+1))
@@ -789,6 +793,8 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                     if ito_a == 0:
                         f2 = open(gradsfile_ll, 'wb')
                     else:
+                        while not os.path.exists(gradsfile_ll):
+                            time.sleep(1)
                         f2 = open(gradsfile_ll, 'r+b')
                     for iv in range(nv3d):
                         print(myrankmsg, 'Write 3D variable (lat/lon): {:s} [to = {:d}]'.format(conf['varout_3d'][iv], ito_a+1))
