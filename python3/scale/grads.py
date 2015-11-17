@@ -510,7 +510,7 @@ def create_ctlfile_ll(sio, conf, lons, lone, nx, lats, late, ny, nz, t, tint, ts
 
     levs = ''
     if conf['vcoor'] == 'z' or conf['vcoor'] == 'o' or conf['ftype'] == 'restart_sprd':
-        for ilev in range(nzout):
+        for ilev in range(nz):
             levs += "{0:12.6f}\n".format(sio.z[ilev])
     elif conf['vcoor'] == 'p':
         for ilev in range(nz):
@@ -681,7 +681,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
 
             print('Generate CTL file (lat/lon)')
             if ctlfile_ll is 'auto':
-                ctlfile_ll_ = '{0:s}.ctl'.format(gradsfile.rsplit('.', 1)[0])
+                ctlfile_ll_ = '{0:s}.ctl'.format(gradsfile_ll.rsplit('.', 1)[0])
             else:
                 ctlfile_ll_ = ctlfile_ll
             create_ctlfile_ll(sio, conf, lon_s, lon_e, nxll, lat_s, lat_e, nyll,
