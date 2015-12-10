@@ -82,7 +82,9 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
         timef2 = time.strftime('%Y-%m-%d %H:%M:%S')
 
         if myrank == 0:
+            print('=====================')
             print('[{:s}]'.format(timef2))
+            print('=====================')
 
         for ityp in ['gues', 'anal']:
             if ityp in tlist:
@@ -129,6 +131,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
 
                         if nprocs > 1:
                             comm.Barrier()
+                        if myrank == 0:
+                            print()
+                            print('* {:s}.pe______.nc'.format(basename))
+                            print()
                         convert(basename, topo=topofile, t=time, tint=tint,
                                 ftype=ftype, vcoor=vcoor, plevels=plevels, dlon=dlon, dlat=dlat,
                                 varout_3d=varout_3d, varout_2d=varout_2d,
@@ -143,8 +149,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                         ctltext = f.read()
 
                                     if im == 'mean' or im == 'meanf' or im == 'sprd':
-                                        ctltext = ctltext.replace("{:s}/{:s}{:s}/{:s}.grd\n".format(timef, ityp, vsuffix, im),
-                                                                  "%y4%m2%d2%h2%n200/{:s}{:s}/{:s}.grd\noptions template\n".format(ityp, vsuffix, im), 1)
+                                        ctltext = ctltext.replace("{:s}/{:s}{:s}{:s}/{:s}.grd\n".format(timef, ityp, vsuffix, hg_suffix[ihg], im),
+                                                                  "%y4%m2%d2%h2%n200/{:s}{:s}{:s}/{:s}.grd\noptions template\n".format(ityp, vsuffix, hg_suffix[ihg], im), 1)
                                         ctltext = ctltext.replace('tdef      1', 'tdef  10000', 1)
                                     elif im == '0001':
                                         edef = ''
@@ -153,8 +159,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                             if type(imm) == int:
                                                 edef += "\n{:04d}".format(imm)
                                                 ie += 1
-                                        ctltext = ctltext.replace("{:s}/{:s}{:s}/0001.grd\n".format(timef, ityp, vsuffix),
-                                                                  "%y4%m2%d2%h2%n200/{:s}{:s}/%e.grd\noptions template\n".format(ityp, vsuffix), 1)
+                                        ctltext = ctltext.replace("{:s}/{:s}{:s}{:s}/0001.grd\n".format(timef, ityp, vsuffix, hg_suffix[ihg]),
+                                                                  "%y4%m2%d2%h2%n200/{:s}{:s}{:s}/%e.grd\noptions template\n".format(ityp, vsuffix, hg_suffix[ihg]), 1)
                                         ctltext = ctltext.replace('tdef      1', 'tdef  10000', 1)
                                         ctltext = ctltext.replace("\npdef", "\nedef   {:4d} names{:s}\npdef".format(ie, edef), 1)
 
@@ -200,6 +206,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
 
                     if nprocs > 1:
                         comm.Barrier()
+                    if myrank == 0:
+                        print()
+                        print('* {:s}.pe______.nc'.format(basename))
+                        print()
                     convert(basename, t=None,
                             ftype=ftype, vcoor=vcoor, plevels=plevels, dlon=dlon, dlat=dlat,
                             varout_3d=varout_3d, varout_2d=varout_2d,
@@ -220,8 +230,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                         if type(imm) == int:
                                             edef += "\n{:04d}".format(imm)
                                             ie += 1
-                                    ctltext = ctltext.replace("{:s}{:s}/0001.grd\n".format(ityp, vsuffix),
-                                                              "{:s}{:s}/%e.grd\noptions template\n".format(ityp, vsuffix), 1)
+                                    ctltext = ctltext.replace("{:s}{:s}{:s}/0001.grd\n".format(ityp, vsuffix, hg_suffix[ihg]),
+                                                              "{:s}{:s}{:s}/%e.grd\noptions template\n".format(ityp, vsuffix, hg_suffix[ihg]), 1)
                                     ctltext = ctltext.replace("\npdef", "\nedef   {:4d} names{:s}\npdef".format(ie, edef), 1)
 
                                     with open(kws[hg_ctlargs[ihg]], 'w') as f:
