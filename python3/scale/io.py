@@ -346,6 +346,8 @@ class ScaleIO:
         """
         if year is None:
             self.year = dt.datetime.now().year
+        else:
+            self.year = year
         self.nproc, self.rootgrps, self.dimdef = scale_open(basename, mode)
         self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         if self.dimdef['len']['time'][0] is None:
@@ -515,7 +517,7 @@ class ScaleIO:
 
         if verbose >= 1:
             print('Write variable: ' + varname + tshow)
-        if bufsize == 0 or len(res.shape) < 2:
+        if bufsize == 0 or len(vardata.shape) < 2:
             scale_write(self.nproc, self.rootgrps, self.dimdef, varname, vardata, t=t)
         else:
             tmpdata = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]

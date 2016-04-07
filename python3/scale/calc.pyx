@@ -1,4 +1,5 @@
-print('hello from cython')
+import sys
+sys.stderr.write("hello from cython\n")
 
 import numpy as np
 import numpy.ma as ma
@@ -22,7 +23,7 @@ missingv = 1.e-33
 rsphere = 6.37122e6
 
 
-def set_bmap(sio, proj):
+def set_bmap(sio, proj, resolution=None):
     """
     Set map projection
 
@@ -35,7 +36,7 @@ def set_bmap(sio, proj):
     if proj['type'] == 'LC':
         bmap = Basemap(projection='lcc', lat_1=proj['LC_lat1'], lat_2=proj['LC_lat2'], lon_0=proj['basepoint_lon'],
                        llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat,
-                       rsphere=rsphere)
+                       rsphere=rsphere, resolution=resolution)
     else:
         raise ValueError('[Error] Unsupport map projection.')
 
