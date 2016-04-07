@@ -565,7 +565,7 @@ vars {nvar:d}
 
 def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(hours=6), 
             gradsfile='out.dat', ctlfile='auto', gradsfile_ll='out_latlon.dat', ctlfile_ll='auto',
-            comm=None, sim_read=1, **kwargs):
+            comm=None, commL=None, sim_read=1, **kwargs):
     """
     """
     # Determine if the mpi4py is used
@@ -574,12 +574,18 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
         nprocs = 1
         myrank = 0
         myrankmsg = ''
+        nprocsL = 1
+        myrankL = 0
     else:
-        comm.Barrier()
         nprocs = comm.Get_size()
         myrank = comm.Get_rank()
-        print('<< My rank / total processes = {:d} / {:d} >>'.format(myrank, nprocs))
         myrankmsg = '<< Rank {:6d} >> '.format(myrank)
+        if commL is None:
+            commL = comm
+            print('<< My rank / total processes = {:d} / {:d} >>'.format(myrank, nprocs))
+        commL.Barrier()
+        nprocsL = commL.Get_size()
+        myrankL = commL.Get_rank()
 
     # Initial settings
     #------------
@@ -596,13 +602,13 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
         conf['varout_3d'] = [i for i in conf['varout_3d'] if i in var_3d]
         conf['varout_2d'] = [i for i in conf['varout_2d'] if i in var_2d]
 
-    if sim_read <= 0 or sim_read >= nprocs:
-        sim_read = nprocs
+    if sim_read <= 0 or sim_read >= nprocsL:
+        sim_read = nprocsL
 
     # Initialize the ScaleIO object and get dimensions using the master process,
     # then broadcast the dimensions to other processes
     #------------
-    if myrank == 0:
+    if myrankL == 0:
         sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=1)
 
         nx = sio.dimdef['len_g']['x'] - sio.bufsize * 2
@@ -636,31 +642,31 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
         nt = 0
         bmap = None
 
-    if nprocs > 1:
-        nx = comm.bcast(nx, root=0)
-        ny = comm.bcast(ny, root=0)
-        nz = comm.bcast(nz, root=0)
-        nzout = comm.bcast(nzout, root=0)
-        nt = comm.bcast(nt, root=0)
-        bmap = comm.bcast(bmap, root=0)
+    if nprocsL > 1:
+        nx = commL.bcast(nx, root=0)
+        ny = commL.bcast(ny, root=0)
+        nz = commL.bcast(nz, root=0)
+        nzout = commL.bcast(nzout, root=0)
+        nt = commL.bcast(nt, root=0)
+        bmap = commL.bcast(bmap, root=0)
 
     # Determine the time frames handled by each process
     #------------
     its_a = conf['tstart']
     ite_a = conf['tend']
     tskip_a = conf['tskip']
-    if ite_a == -1:
+    if ite_a == -1 or ite_a > nt:
         ite_a = nt
     nto_a = len(range(its_a, ite_a, tskip_a))
 
-    its = its_a + tskip_a * myrank
+    its = its_a + tskip_a * myrankL
     ite = ite_a
-    tskip = tskip_a * nprocs
+    tskip = tskip_a * nprocsL
     nto = len(range(its, ite, tskip))
 
     # Generate the CTL file using the master process
     #------------
-    if myrank == 0:
+    if myrankL == 0:
         if gradsfile is not None and ctlfile is not None:
             print('Generate CTL file')
             if ctlfile is 'auto':
@@ -716,17 +722,17 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
 
         ito = 0
         for it in range(its, ite, tskip):
-            it_a = its_a + tskip * ito + tskip_a * myrank
-            ito_a = nprocs * ito + myrank
+            it_a = its_a + tskip * ito + tskip_a * myrankL
+            ito_a = nprocsL * ito + myrankL
 
             # read data in 'dryrun' mode, one process follows the previous process sequentially
             ######
-            if comm is not None and ito_a >= sim_read:
-                srank = myrank - sim_read
+            if commL is not None and ito_a >= sim_read:
+                srank = myrankL - sim_read
                 if srank < 0:
-                    srank += nprocs
+                    srank += nprocsL
 #                print(myrankmsg, 'Recv', 10+ito_a-sim_read)
-                comm.Recv(dummy, source=srank, tag=10+ito_a-sim_read)
+                commL.Recv(dummy, source=srank, tag=10+ito_a-sim_read)
             ######
             if sio is None:
                 sio = ScaleIO(basename, cache=True, bufsize=bufsize, verbose=1)
@@ -742,12 +748,12 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                     del sio_topo
             X, t0_ext = convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=True)
             ######
-            if comm is not None and ito_a + sim_read < nto_a:
-                drank = myrank + sim_read
-                if drank >= nprocs:
-                    drank -= nprocs
+            if commL is not None and ito_a + sim_read < nto_a:
+                drank = myrankL + sim_read
+                if drank >= nprocsL:
+                    drank -= nprocsL
 #                print(myrankmsg, 'Send', 10+ito_a)
-                comm.Send(dummy, dest=drank, tag=10+ito_a)
+                commL.Send(dummy, dest=drank, tag=10+ito_a)
             ######
 
             # do real variable transform computation
@@ -767,12 +773,12 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
             if gradsfile is not None or gradsfile_ll is not None:
                 # write grads data, one process follows the previous process sequentially
                 ######
-                if comm is not None and ito_a >= sim_read:
-                    srank = myrank - sim_read
+                if commL is not None and ito_a >= sim_read:
+                    srank = myrankL - sim_read
                     if srank < 0:
-                        srank += nprocs
+                        srank += nprocsL
 #                    print(myrankmsg, 'Recv', 10+nto_a+ito_a-sim_read)
-                    comm.Recv(dummy, source=srank, tag=10+nto_a+ito_a-sim_read)
+                    commL.Recv(dummy, source=srank, tag=10+nto_a+ito_a-sim_read)
                 ######
                 if gradsfile is not None:
                     if ito_a == 0:
@@ -804,12 +810,12 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                         gradsio.writegrads(f2, X2dll[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nxout, ny=nyout, nz=nzout, nt=nt)
                     f2.close()
                 ######
-                if comm is not None and ito_a + sim_read < nto_a:
-                    drank = myrank + sim_read
-                    if drank >= nprocs:
-                        drank -= nprocs
+                if commL is not None and ito_a + sim_read < nto_a:
+                    drank = myrankL + sim_read
+                    if drank >= nprocsL:
+                        drank -= nprocsL
 #                    print(myrankmsg, 'Send', 10+nto_a+ito_a)
-                    comm.Send(dummy, dest=drank, tag=10+nto_a+ito_a)
+                    commL.Send(dummy, dest=drank, tag=10+nto_a+ito_a)
                 ######
 
             X.clear()
