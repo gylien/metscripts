@@ -124,7 +124,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                             basename.append(basenametmp)
                             kws.append({'gradsfile': None, 'ctlfile': None, 'gradsfile_ll': None, 'ctlfile_ll': None})
                             time.append(itime)
-                            ftype.append('restart')
+                            if iim == 'sprd':
+                                ftype.append('restart_sprd')
+                            else:
+                                ftype.append('restart')
                             ftypeda.append(ityp)
                             im.append(iim)
 
@@ -392,20 +395,21 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     if ifile is not None:
                         print(myrankmsg, 'Post-process ctl file: {:s}'.format(ifile))
 
-                        with open(ifile, 'r') as f:
-                            ctltext = f.read()
+                        if im[ito_a] == '0001':
+                            with open(ifile, 'r') as f:
+                                ctltext = f.read()
 
-                        edef = ''
-                        ie = 0
-                        for imm in mlist:
-                            if type(imm) == int:
-                                edef += "\n{:04d}".format(imm)
-                                ie += 1
-                        ctltext = ctltext.replace("{:s}{:s}{:s}/0001.grd\n".format(ftypeda[ito_a], vsuffix, hg_suffix[ihg]),
-                                                  "{:s}{:s}{:s}/%e.grd\noptions template\n".format(ftypeda[ito_a], vsuffix, hg_suffix[ihg]), 1)
-                        ctltext = ctltext.replace("\npdef", "\nedef   {:4d} names{:s}\npdef".format(ie, edef), 1)
+                            edef = ''
+                            ie = 0
+                            for imm in mlist:
+                                if type(imm) == int:
+                                    edef += "\n{:04d}".format(imm)
+                                    ie += 1
+                            ctltext = ctltext.replace("{:s}{:s}{:s}/0001.grd\n".format(ftypeda[ito_a], vsuffix, hg_suffix[ihg]),
+                                                      "{:s}{:s}{:s}/%e.grd\noptions template\n".format(ftypeda[ito_a], vsuffix, hg_suffix[ihg]), 1)
+                            ctltext = ctltext.replace("\npdef", "\nedef   {:4d} names{:s}\npdef".format(ie, edef), 1)
 
-                        with open(ifile, 'w') as f:
-                            f.write(ctltext)
+                            with open(ifile, 'w') as f:
+                                f.write(ctltext)
 
             ito += 1
