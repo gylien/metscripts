@@ -37,6 +37,10 @@ def set_bmap(sio, proj, resolution=None):
         bmap = Basemap(projection='lcc', lat_1=proj['LC_lat1'], lat_2=proj['LC_lat2'], lon_0=proj['basepoint_lon'],
                        llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat,
                        rsphere=rsphere, resolution=resolution)
+    elif proj['type'] == 'MER':
+        bmap = Basemap(projection='merc', lon_0=proj['basepoint_lon'],lat_0=proj['basepoint_lat'],lat_ts=proj['basepoint_lat'],
+                       llcrnrlon=llcrnrlon, llcrnrlat=llcrnrlat, urcrnrlon=urcrnrlon, urcrnrlat=urcrnrlat,
+                       rsphere=rsphere)
     else:
         raise ValueError('[Error] Unsupport map projection.')
 
