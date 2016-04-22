@@ -250,10 +250,6 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
     im = []
 
     if myrank == 0:
-        ctlfile_done = {
-        'fcst': dict.fromkeys(('mean', '0001'), False)
-        }
-
         itime = stime
         while itime <= etime:
             timef = itime.strftime('%Y%m%d%H%M%S')
@@ -277,19 +273,16 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                             kws[n][hg_gradsargs[ihg]] = "{:s}/{:s}/{:s}{:s}{:s}/{:s}.grd".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg], iim)
                             os.makedirs(os.path.dirname(kws[n][hg_gradsargs[ihg]]), exist_ok=True)
 
-                        if iim in ['mean', 'meanf', 'sprd', '0001']:
-                            if not ctlfile_done[ityp][iim]:
-                                ctlfile_done[ityp][iim] = True
+                        if iim in ['mean', '0001']:
+                            for ihg in hglist:
+                                if iim == 'mean':
+                                    kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}_mean.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
+                                elif iim == '0001':
+                                    kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
 
-                                for ihg in hglist:
-                                    if iim == 'mean':
-                                        kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}_mean.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
-                                    elif iim == '0001':
-                                        kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
-
-                                    os.makedirs(os.path.dirname(kws[n][hg_ctlargs[ihg]]), exist_ok=True)
-                                    if os.path.isfile(kws[n][hg_ctlargs[ihg]]):
-                                        kws[n][hg_ctlargs[ihg]] = None
+                                os.makedirs(os.path.dirname(kws[n][hg_ctlargs[ihg]]), exist_ok=True)
+                                if os.path.isfile(kws[n][hg_ctlargs[ihg]]):
+                                    kws[n][hg_ctlargs[ihg]] = None
 
                         n += 1
             itime += tint
