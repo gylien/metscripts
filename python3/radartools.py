@@ -66,16 +66,26 @@ def radarobs_read(filename, endian=''):
 
     for ie in range(data['ne']):
         fort_seq_read(f, buf[ie])
-    data['attn'] = ma.masked_values(buf, data['undef'])
+    data['qc'] = ma.masked_values(buf, data['undef'])
 
     for ie in range(data['ne']):
         fort_seq_read(f, buf[ie])
-    data['qc'] = ma.masked_values(buf, data['undef'])
+    data['attn'] = ma.masked_values(buf, data['undef'])
 
     f.close()
 
     print("Radar data '{:s}' was read in {:.3f} seconds".format(filename, time.time() - t0))
     return data
+
+
+def dist_ll(lon1, lat1, lon2, lat2):
+    return Re * np.arccos(np.sin(np.deg2rad(lat1)) * np.sin(np.deg2rad(lat2)) + 
+                          np.cos(np.deg2rad(lat1)) * np.cos(np.deg2rad(lat2)) * np.cos(np.deg2rad(lon2 - lon1)))
+
+
+def az_ll(lon1, lat1, lon2, lat2):
+    return np.rad2deg(np.arctan2(np.sin(np.deg2rad(lon2 - lon1)) * np.cos(np.deg2rad(lat2)),
+                                 np.cos(np.deg2rad(lat1)) * np.sin(np.deg2rad(lat2)) - np.sin(np.deg2rad(lat1)) * np.cos(np.deg2rad(lat2)) * np.cos(np.deg2rad(lon2 - lon1))))
 
 
 def ll_arc_distance(lon0, lat0, arc_dist, az):

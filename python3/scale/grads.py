@@ -191,16 +191,29 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
                 X['w'][0,:,:] = 0.
 
     elif conf['ftype'] == 'history':
+        run_calc_pt = False
         for ivar, ivarf in ('rho', 'DENS'), ('momx', 'MOMX'), ('momy', 'MOMY'), ('momz', 'MOMZ'), ('rhot', 'RHOT'), \
                            ('qv', 'QV'), ('qc', 'QC'), ('qr', 'QR'), ('qi', 'QI'), ('qs', 'QS'), ('qg', 'QG'), ('qhydro', 'QHYD'), \
                            ('u', 'U'), ('v', 'V'), ('w', 'W'), ('tk', 'T'), ('p', 'PRES'), ('theta', 'PT'), ('rh', 'RH'):
             if ivar in conf['varout_3d'] or ivar in var_necessary:
-                X[ivar] = sio.readvar(ivarf, t=it)
+                try:
+                    X[ivar] = sio.readvar(ivarf, t=it)
+                except IOError as err:
+                    if ivar == 'theta':
+                        run_calc_pt = True
+                        pass
+                    else:
+                        raise err
 
         if 'u' in conf['varout_3d'] or 'v' in conf['varout_3d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: rotate u, v')
                 X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
+
+        if run_calc_pt:
+            if not dryrun:
+                print(myrankmsg, 'Calculate: p, t, theta')
+            X['p'], X['tk'], X['theta'] = calc_pt(sio, qhydro=X['qhydro'], tout=True, thetaout=True, t=it, dryrun=dryrun)
 
         for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
                            ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'), ('glon', 'lon'), ('glat', 'lat'):
