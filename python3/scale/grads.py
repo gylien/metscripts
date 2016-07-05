@@ -501,7 +501,7 @@ def create_ctlfile(sio, conf, nx, ny, nz, t, tint, tskip_a, nto_a, gradsfile, ct
         varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d_name[ivar])
 
     if conf['proj']['type'] == 'LC':
-      template = """dset ^{dset:s}
+        template = """dset ^{dset:s}
 undef {undef:e}
 xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
 ydef {nyout:6d} linear {lats:12.6f} {latint:12.6f}
@@ -511,27 +511,27 @@ zdef {nz:6d} levels
 vars {nvar:d}
 {varstr:s}endvars
 """
-      context = {
-      'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
-      'undef':  conf['missing'],
-      'nxout':  nxout,
-      'lons':   lons,
-      'lonint': lonint,
-      'nyout':  nyout,
-      'lats':   lats,
-      'latint': latint,
-      'nz':     nz,
-      'levs':   levs,
-      'nto':    nto_a,
-      'ts':     ts.strftime('%H:%MZ%d%b%Y'),
-      'tint':   tint_min,
-      'pdef':   pdef,
-      'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
-      'varstr': varstr
-      }
+        context = {
+        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
+        'undef':  conf['missing'],
+        'nxout':  nxout,
+        'lons':   lons,
+        'lonint': lonint,
+        'nyout':  nyout,
+        'lats':   lats,
+        'latint': latint,
+        'nz':     nz,
+        'levs':   levs,
+        'nto':    nto_a,
+        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
+        'tint':   tint_min,
+        'pdef':   pdef,
+        'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
+        'varstr': varstr
+        }
 
     if conf['proj']['type'] == 'MER':
-      template = """dset ^{dset:s}
+        template = """dset ^{dset:s}
 undef {undef:e}
 xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
 ydef {nyout:6d} levels 
@@ -541,24 +541,24 @@ zdef {nz:6d} levels
 vars {nvar:d}
 {varstr:s}endvars
 """
-      context = {
-      'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
-      'undef':  conf['missing'],
-      'nxout':  nxout,
-      'lons':   lons,
-      'lonint': lonint,
-      'nyout':  nyout,
-      'lats':   lats,
-      'latint': latint,
-      'nz':     nz,
-      'levs':   levs,
-      'nto':    nto_a,
-      'ts':     ts.strftime('%H:%MZ%d%b%Y'),
-      'tint':   tint_min,
-      'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
-      'varstr': varstr,
-      'merlat': merlat
-      }
+        context = {
+        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
+        'undef':  conf['missing'],
+        'nxout':  nxout,
+        'lons':   lons,
+        'lonint': lonint,
+        'nyout':  nyout,
+        'lats':   lats,
+        'latint': latint,
+        'nz':     nz,
+        'levs':   levs,
+        'nto':    nto_a,
+        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
+        'tint':   tint_min,
+        'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
+        'varstr': varstr,
+        'merlat': merlat
+        }
 
 
     with open(ctlfile, 'w') as fc:
