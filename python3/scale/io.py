@@ -349,7 +349,6 @@ class ScaleIO:
         else:
             self.year = year
         self.nproc, self.rootgrps, self.dimdef = scale_open(basename, mode)
-        self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         if self.dimdef['len']['time'][0] is None:
             self.t = None
         else:
@@ -358,8 +357,10 @@ class ScaleIO:
 #            self.t = [scale_gettime(i, self.year) for i in time_array]
             for it in range(len(time_array)):
                 self.t[it] = scale_gettime(time_array[it], self.year)
-        self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
-        self.zh = scale_read(self.nproc, self.rootgrps, self.dimdef, 'zh')[1]
+        if 'z' in self.rootgrps[0].variables:
+            self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
+        if 'zh' in self.rootgrps[0].variables:
+            self.zh = scale_read(self.nproc, self.rootgrps, self.dimdef, 'zh')[1]
         self.lon = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lon')[1]
         self.lat = scale_read(self.nproc, self.rootgrps, self.dimdef, 'lat')[1]
         assert bufsize >= 0, "'bufsize' should be greater than or equal to 0."
