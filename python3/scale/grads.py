@@ -435,6 +435,15 @@ def create_ctlfile(sio, conf, nx, ny, nz, t, tint, tskip_a, nto_a, gradsfile, ct
     late = np.max(sio.lat[sliceobj])
     nxout = nx * 2 - 1
     nyout = ny * 2 - 1
+
+    if conf['proj']['type'] == 'MER':
+        nxout = nx
+        nyout = ny
+        merlat1 = sio.lat[sliceobj]
+        merlat = ''
+        for j in range(ny):
+            merlat += "{0:12.6f}\n".format(merlat1[j,1])
+
     lonint = (lone - lons) / (nxout-1)
     latint = (late - lats) / (nyout-1)
     dx = sio.dimdef['coor_g']['x'][sio.bufsize+1] - sio.dimdef['coor_g']['x'][sio.bufsize]
@@ -473,6 +482,15 @@ def create_ctlfile(sio, conf, nx, ny, nz, t, tint, tskip_a, nto_a, gradsfile, ct
                iref=iref, jref=jref,
                Struelat=conf['proj']['LC_lat1'], Ntruelat=conf['proj']['LC_lat2'],
                slon=conf['proj']['basepoint_lon'], dx=dx, dy=dy)
+    elif conf['proj']['type'] == 'MER':
+        if 'basepoint_x' in conf['proj'] and conf['proj']['basepoint_x'] is None:
+            iref = 0.5*(nx+1)
+        else:
+            iref = conf['proj']['basepoint_x'] / float(dx) + 0.5
+        if 'basepoint_y' in conf['proj'] and conf['proj']['basepoint_y'] is None:
+            jref = 0.5*(ny+1)
+        else:
+            jref = conf['proj']['basepoint_y'] / float(dy) + 0.5
     else:
         raise ValueError('[Error] Unsupport map projection.')
 
@@ -482,7 +500,8 @@ def create_ctlfile(sio, conf, nx, ny, nz, t, tint, tskip_a, nto_a, gradsfile, ct
     for ivar in conf['varout_2d']:
         varstr += "{varname:<12}{nz:6d} 99 {dscr:s}\n".format(varname=ivar, nz=0, dscr=var_2d_name[ivar])
 
-    template = """dset ^{dset:s}
+    if conf['proj']['type'] == 'LC':
+        template = """dset ^{dset:s}
 undef {undef:e}
 xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
 ydef {nyout:6d} linear {lats:12.6f} {latint:12.6f}
@@ -492,24 +511,55 @@ zdef {nz:6d} levels
 vars {nvar:d}
 {varstr:s}endvars
 """
-    context = {
-    'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
-    'undef':  conf['missing'],
-    'nxout':  nxout,
-    'lons':   lons,
-    'lonint': lonint,
-    'nyout':  nyout,
-    'lats':   lats,
-    'latint': latint,
-    'nz':     nz,
-    'levs':   levs,
-    'nto':    nto_a,
-    'ts':     ts.strftime('%H:%MZ%d%b%Y'),
-    'tint':   tint_min,
-    'pdef':   pdef,
-    'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
-    'varstr': varstr
-    }
+        context = {
+        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
+        'undef':  conf['missing'],
+        'nxout':  nxout,
+        'lons':   lons,
+        'lonint': lonint,
+        'nyout':  nyout,
+        'lats':   lats,
+        'latint': latint,
+        'nz':     nz,
+        'levs':   levs,
+        'nto':    nto_a,
+        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
+        'tint':   tint_min,
+        'pdef':   pdef,
+        'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
+        'varstr': varstr
+        }
+
+    if conf['proj']['type'] == 'MER':
+        template = """dset ^{dset:s}
+undef {undef:e}
+xdef {nxout:6d} linear {lons:12.6f} {lonint:12.6f}
+ydef {nyout:6d} levels 
+{merlat:s} 
+zdef {nz:6d} levels
+{levs:s}tdef {nto:6d} linear {ts:s} {tint:d}mn
+vars {nvar:d}
+{varstr:s}endvars
+"""
+        context = {
+        'dset':   os.path.relpath(gradsfile, os.path.dirname(ctlfile)),
+        'undef':  conf['missing'],
+        'nxout':  nxout,
+        'lons':   lons,
+        'lonint': lonint,
+        'nyout':  nyout,
+        'lats':   lats,
+        'latint': latint,
+        'nz':     nz,
+        'levs':   levs,
+        'nto':    nto_a,
+        'ts':     ts.strftime('%H:%MZ%d%b%Y'),
+        'tint':   tint_min,
+        'nvar':   len(conf['varout_3d']) + len(conf['varout_2d']),
+        'varstr': varstr,
+        'merlat': merlat
+        }
+
 
     with open(ctlfile, 'w') as fc:
         fc.write(template.format(**context))
