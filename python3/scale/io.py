@@ -3,7 +3,8 @@ import numpy.ma as ma
 import ncphysio
 import os.path
 import datetime as dt
-from netCDF4 import Dataset
+import warnings
+from netCDF4 import Dataset, num2date, date2num
 
 
 __all__ = ['scale_dimlist', 'scale_dimlist_g', 'scale_file_suffix',
@@ -154,6 +155,7 @@ def scale_gettime(scale_time, year):
     time : <datetime.datetime> class
         Time in <datetime.datetime> class
     """
+    warnings.warn('scale_gettime: This function is deprecated!')
     return dt.datetime(year, 1, 1, 0, 0, 0) + dt.timedelta(seconds=scale_time)
 
 
@@ -171,6 +173,7 @@ def scale_puttime(time):
     scale_time : float
         Time in SCALE files
     """
+    warnings.warn('scale_puttime: This function is deprecated!')
     return (time - dt.datetime(time.year, 1, 1, 0, 0, 0)).total_seconds()
 
 
@@ -207,7 +210,10 @@ def scale_read(nproc, rootgrps, scale_dimdef, varname, t=None):
         time = None
     elif type(t) is dt.datetime:
         it = None
-        time = scale_puttime(t)
+        if 'time' in self.rootgrps[0].variables:
+            time = date2num(t, units=rootgrps[0].variables['time'].units)
+        else:
+            raise ValueError("The type of 't' is 'datetime.datetime', but no 'time' variable is found in the NetCDF file.")
     else:
         raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
 
@@ -276,7 +282,10 @@ def scale_write(nproc, rootgrps, scale_dimdef, varname, vardata, t=None):
         time = None
     elif type(t) is dt.datetime:
         it = None
-        time = scale_puttime(t)
+        if 'time' in self.rootgrps[0].variables:
+            time = date2num(t, units=rootgrps[0].variables['time'].units)
+        else:
+            raise ValueError("The type of 't' is 'datetime.datetime', but no 'time' variable is found in the NetCDF file.")
     else:
         raise ValueError("The type of 't' should be either 'int' or 'datetime.datetime' or 'None'.")
 
@@ -334,7 +343,7 @@ class ScaleIO:
             File I/O mode
             * 'r' -- read (default)
             * 'r+' -- read/write
-        year : integer
+        year : integer (deprecated)
             Year of the data.
             * None -- the current year (default)
         bufsize : int
@@ -344,19 +353,22 @@ class ScaleIO:
             * False -- do not cache (default)
             * True -- cache
         """
-        if year is None:
-            self.year = dt.datetime.now().year
-        else:
-            self.year = year
+        if year is not None:
+            warnings.warn("ScaleIO.__init__: The input variable 'year' is deprecated!")
+
         self.nproc, self.rootgrps, self.dimdef = scale_open(basename, mode)
         if self.dimdef['len']['time'][0] is None:
-            self.t = None
+            if 'time' in self.rootgrps[0].ncattrs() and 'time_units' in self.rootgrps[0].ncattrs():
+                self.t = np.array([num2date(self.rootgrps[0].time, self.rootgrps[0].time_units)])
+            else:
+                self.t = None
         else:
-            time_array = scale_read(self.nproc, self.rootgrps, self.dimdef, 'time')[1]
-            self.t = np.empty_like(time_array, dtype='O')
-#            self.t = [scale_gettime(i, self.year) for i in time_array]
-            for it in range(len(time_array)):
-                self.t[it] = scale_gettime(time_array[it], self.year)
+            self.t = num2date(self.rootgrps[0].variables['time'][:], units=self.rootgrps[0].variables['time'].units)
+        if self.t is None:
+#            self.year = None
+            self.year = dt.datetime.now().year
+        else:
+            self.year = self.t[0].year
         if 'z' in self.rootgrps[0].variables:
             self.z = scale_read(self.nproc, self.rootgrps, self.dimdef, 'z')[1]
         if 'zh' in self.rootgrps[0].variables:
@@ -383,7 +395,6 @@ class ScaleIO:
                 self.cache[ivar].clear()
             self.cache.clear()
         else:
-            import warnings
             warnings.warn('Cache is not enabled.')
 
 
