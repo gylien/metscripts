@@ -1,5 +1,6 @@
 import numpy as np
 import struct
+import os
 
 obsrecords = {
 'speedy': {'names':['elm','lon','lat','lev','dat','err'],
@@ -110,6 +111,23 @@ def readobs_all(fo, otype='gfs', endian=None):
 
     return np.array(data, dtype=np.dtype(obsrecords[otype]))
 
+def readobs_all_fast(fo, otype='gfs', endian=None):
+    try:
+        obsrecords[otype]
+    except KeyError:
+        raise ValueError("'otype' has to be " + str(list(obsrecords.keys())))
+    reclen = len(obsrecords[otype]['names'])
+    dtyp, dtypistr = endian_det(endian)
+
+    filelen = os.fstat(fo.fileno()).st_size
+    nobs = int(filelen / (4 * (reclen+2)))
+
+    fo.seek(0)
+
+    dataraw = (np.fromfile(fo, dtype=dtyp, count=nobs*(reclen+2)).reshape(nobs, reclen+2))[:,1:reclen+1]
+
+    return np.array([tuple(i) for i in dataraw], dtype=np.dtype(obsrecords[otype]))
+
 def readobs_radar_all(fo, otype='gfs', endian=None):
     try:
         obsrecords[otype]
@@ -140,6 +158,33 @@ def readobs_radar_all(fo, otype='gfs', endian=None):
         fo.read(4)
 
     return radar_lon, radar_lat, radar_z, np.array(data, dtype=np.dtype(obsrecords[otype]))
+
+def readobs_radar_all_fast(fo, otype='gfs', endian=None):
+    try:
+        obsrecords[otype]
+    except KeyError:
+        raise ValueError("'otype' has to be " + str(list(obsrecords.keys())))
+    reclen = len(obsrecords[otype]['names'])
+    dtyp, dtypistr = endian_det(endian)
+
+    filelen = os.fstat(fo.fileno()).st_size
+    nobs = int((filelen - 36) / (4 * (reclen+2)))
+
+    fo.seek(0)
+
+    fo.read(4)
+    radar_lon = np.fromfile(fo, dtype=dtyp, count=1)[0]
+    fo.read(4)
+    fo.read(4)
+    radar_lat = np.fromfile(fo, dtype=dtyp, count=1)[0]
+    fo.read(4)
+    fo.read(4)
+    radar_z = np.fromfile(fo, dtype=dtyp, count=1)[0]
+    fo.read(4)
+
+    dataraw = (np.fromfile(fo, dtype=dtyp, count=nobs*(reclen+2)).reshape(nobs, reclen+2))[:,1:reclen+1]
+
+    return radar_lon, radar_lat, radar_z, np.array([tuple(i) for i in dataraw], dtype=np.dtype(obsrecords[otype]))
 
 def writeobs(fo, sglobs, endian=None):
     dtyp, dtypistr = endian_det(endian)
