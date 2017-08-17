@@ -363,7 +363,10 @@ class ScaleIO:
             else:
                 self.t = None
         else:
-            self.t = num2date(self.rootgrps[0].variables['time'][:], units=self.rootgrps[0].variables['time'].units)
+            if self.rootgrps[0].variables['time'].units == 'seconds':                                               ###### workaround for a bug in SCALE 5.2.0
+                self.t = num2date(self.rootgrps[0].variables['time'][:], units="seconds since 2017-01-01 00:00:00") ######
+            else:                                                                                                   ######
+                self.t = num2date(self.rootgrps[0].variables['time'][:], units=self.rootgrps[0].variables['time'].units)
         if self.t is None:
 #            self.year = None
             self.year = dt.datetime.now().year
