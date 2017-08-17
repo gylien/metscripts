@@ -61,13 +61,13 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
 
     mlist = []
     if type(member) == int:
-        mlist = ['mean', 'meanf', 'sprd'] + list(range(1, member+1))
-    elif member in ('mean', 'meanf', 'sprd'):
+        mlist = ['mean', 'meanf', 'mdet', 'sprd'] + list(range(1, member+1))
+    elif member in ('mean', 'meanf', 'mdet', 'sprd'):
         mlist = [member]
     elif hasattr(member, '__iter__'):
         mlist = member
     else:
-        raise ValueError("'member' must be {int, 'mean', 'meanf', 'sprd', array-like}.")
+        raise ValueError("'member' must be {int, 'mean', 'meanf', 'mdet', 'sprd', array-like}.")
 
     tlist = []
     if outtype == 'all':
@@ -105,8 +105,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
 
     if myrank == 0:
         ctlfile_done = {
-        'gues': dict.fromkeys(('mean', 'meanf', 'sprd', '0001'), False),
-        'anal': dict.fromkeys(('mean', 'sprd', '0001'), False)
+        'gues': dict.fromkeys(('mean', 'meanf', 'mdet', 'sprd', '0001'), False),
+        'anal': dict.fromkeys(('mean', 'mdet', 'sprd', '0001'), False)
         }
 
         itime = stime
@@ -135,7 +135,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                 kws[n][hg_gradsargs[ihg]] = "{:s}/{:s}/{:s}{:s}{:s}/{:s}.grd".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg], iim)
                                 os.makedirs(os.path.dirname(kws[n][hg_gradsargs[ihg]]), exist_ok=True)
 
-                            if iim in ['mean', 'meanf', 'sprd', '0001']:
+                            if iim in ['mean', 'meanf', 'mdet', 'sprd', '0001']:
                                 if not ctlfile_done[ityp][iim]:
                                     ctlfile_done[ityp][iim] = True
 
@@ -144,6 +144,8 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                                             kws[n][hg_ctlargs[ihg]] = "{:s}/ctl/{:s}{:s}{:s}_mean.ctl".format(letkfoutdir, ityp, vsuffix, hg_suffix[ihg])
                                         elif iim == 'meanf':
                                             kws[n][hg_ctlargs[ihg]] = "{:s}/ctl/{:s}{:s}{:s}_meanf.ctl".format(letkfoutdir, ityp, vsuffix, hg_suffix[ihg])
+                                        elif iim == 'mdet':
+                                            kws[n][hg_ctlargs[ihg]] = "{:s}/ctl/{:s}{:s}{:s}_mdet.ctl".format(letkfoutdir, ityp, vsuffix, hg_suffix[ihg])
                                         elif iim == 'sprd':
                                             kws[n][hg_ctlargs[ihg]] = "{:s}/ctl/{:s}{:s}{:s}_sprd.ctl".format(letkfoutdir, ityp, vsuffix, hg_suffix[ihg])
                                             ftype[n] = 'restart_sprd'
@@ -215,7 +217,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     with open(ifile, 'r') as f:
                         ctltext = f.read()
 
-                    if im[ito_a] == 'mean' or im[ito_a] == 'meanf' or im[ito_a] == 'sprd':
+                    if im[ito_a] == 'mean' or im[ito_a] == 'meanf' or im[ito_a] == 'mdet' or im[ito_a] == 'sprd':
                         ctltext = ctltext.replace("{:s}/{:s}{:s}{:s}/{:s}.grd\n".format(time[ito_a].strftime('%Y%m%d%H%M%S'), ftypeda[ito_a], vsuffix, hg_suffix[ihg], im[ito_a]),
                                                   "%y4%m2%d2%h2%n200/{:s}{:s}{:s}/{:s}.grd\noptions template\n".format(ftypeda[ito_a], vsuffix, hg_suffix[ihg], im[ito_a]), 1)
                         ctltext = ctltext.replace('tdef      1', 'tdef  10000', 1)
@@ -273,10 +275,12 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                             kws[n][hg_gradsargs[ihg]] = "{:s}/{:s}/{:s}{:s}{:s}/{:s}.grd".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg], iim)
                             os.makedirs(os.path.dirname(kws[n][hg_gradsargs[ihg]]), exist_ok=True)
 
-                        if iim in ['mean', '0001']:
+                        if iim in ['mean', 'mdet', '0001']:
                             for ihg in hglist:
                                 if iim == 'mean':
                                     kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}_mean.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
+                                elif iim == 'mdet':
+                                    kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}_mdet.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
                                 elif iim == '0001':
                                     kws[n][hg_ctlargs[ihg]] = "{:s}/{:s}/ctl/{:s}{:s}{:s}.ctl".format(letkfoutdir, timef, ityp, vsuffix, hg_suffix[ihg])
 
