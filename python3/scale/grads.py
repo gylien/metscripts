@@ -135,42 +135,51 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
         if 'u' in conf['varout_3d'] or 'v' in conf['varout_3d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: destaggered u, v, w, momx, momy, momz')
+                sys.stdout.flush()
             X['u'], X['v'], X['w'], X['momx'], X['momy'], X['momz'] = \
                 calc_destagger_uvw(sio, first_grd=True, t=it, dryrun=dryrun)
             if not dryrun:
                 print(myrankmsg, 'Calculate: rotate u, v')
+                sys.stdout.flush()
                 X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
 
         if not dryrun:
             print(myrankmsg, 'Calculate: qhydro')
+            sys.stdout.flush()
         X['qhydro'] = calc_qhydro(sio, t=it, dryrun=dryrun)
 
         if not dryrun:
             print(myrankmsg, 'Calculate: p, t, theta')
+            sys.stdout.flush()
         X['p'], X['tk'], X['theta'] = calc_pt(sio, qhydro=X['qhydro'], tout=True, thetaout=True, t=it, dryrun=dryrun)
 
         if 'dbz' in conf['varout_3d'] or 'max_dbz' in conf['varout_2d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: dbz, max_dbz')
+                sys.stdout.flush()
             X['dbz'], X['max_dbz'] = calc_ref(sio, t=it, dryrun=dryrun)
 
         if not dryrun:
             print(myrankmsg, 'Calculate: z')
+            sys.stdout.flush()
         X['z'], height_h = calc_height(sio, topo=X['topo'], dryrun=dryrun)
 
         if 'rhosfc' in conf['varout_2d'] or 'psfc' in conf['varout_2d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: rhosfc, psfc')
+                sys.stdout.flush()
                 X['rhosfc'], X['psfc'] = calc_rhosfc_psfc(sio, rho=X['rho'], pres=X['p'], height=X['z'], topo=X['topo'], t=it)
 
         if 'slp' in conf['varout_2d'] or (conf['extrap'] and (conf['vcoor'] == 'z' or conf['vcoor'] == 'p')):
             if not dryrun:
                 print(myrankmsg, 'Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+                sys.stdout.flush()
                 t0_ext = extrap_z_t0(sio, X['tk'], lprate=conf['lprate'], zfree=conf['zfree'], height=X['z'], t=it)
 
             if 'slp' in conf['varout_2d']:
                 if not dryrun:
                     print(myrankmsg, 'Calculate: slp')
+                    sys.stdout.flush()
                     X['slp'] = calc_slp(sio, p0=X['p'][0], t0_ext=t0_ext, height=X['z'], 
                                         qv=X['qv'], qhydro=X['qhydro'], lprate=conf['lprate'], t=it)
 
@@ -182,6 +191,7 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
 
         if not dryrun:
             print(myrankmsg, 'Destagger: u, v, w')
+            sys.stdout.flush()
             if 'u' in conf['varout_3d']:
                 X['u'] = calc_destagger(X['u'], axis=2, first_grd=False)
             if 'v' in conf['varout_3d']:
@@ -208,11 +218,13 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
         if 'u' in conf['varout_3d'] or 'v' in conf['varout_3d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: rotate u, v')
+                sys.stdout.flush()
                 X['u'], X['v'] = calc_rotate_winds(sio, bmap, u=X['u'], v=X['v'], t=it)
 
         if run_calc_pt:
             if not dryrun:
                 print(myrankmsg, 'Calculate: p, t, theta')
+                sys.stdout.flush()
             X['p'], X['tk'], X['theta'] = calc_pt(sio, qhydro=X['qhydro'], tout=True, thetaout=True, t=it, dryrun=dryrun)
 
         for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
@@ -223,6 +235,7 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
         if 'u10' in conf['varout_2d'] or 'v10' in conf['varout_2d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: rotate u10, v10')
+                sys.stdout.flush()
                 X['u10'], X['v10'] = calc_rotate_winds(sio, bmap, u=X['u10'], v=X['v10'], t=it)
 
         for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
@@ -240,14 +253,17 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
         if 'qhydro' in conf['varout_3d'] and 'qhydro' not in X:
             if not dryrun:
                 print(myrankmsg, 'Calculate: qhydro')
+                sys.stdout.flush()
             X['qhydro'] = calc_qhydro(sio, t=it, dryrun=dryrun)
         if 'dbz' in conf['varout_3d'] or 'max_dbz' in conf['varout_2d']:
             if not dryrun:
                 print(myrankmsg, 'Calculate: dbz, max_dbz')
+                sys.stdout.flush()
             X['dbz'], X['max_dbz'] = calc_ref(sio, t=it, dryrun=dryrun)
 
         if not dryrun:
             print(myrankmsg, 'Calculate: z')
+            sys.stdout.flush()
         X['z'], height_h = calc_height(sio, topo=X['topo'], dryrun=dryrun)
         if not dryrun:
             X['z'] = X['z'].astype('f4')
@@ -255,11 +271,13 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
         if 'slp' in conf['varout_2d'] and 'slp' not in X or (conf['extrap'] and (conf['vcoor'] == 'z' or conf['vcoor'] == 'p')):
             if not dryrun:
                 print(myrankmsg, 'Calculate smoothed lowest-level surface temperature extrapolated from the free atmosphere')
+                sys.stdout.flush()
             t0_ext = extrap_z_t0(sio, X['tk'], lprate=conf['lprate'], zfree=conf['zfree'], height=X['z'], t=it, dryrun=dryrun)
 
             if 'slp' in conf['varout_2d'] and 'slp' not in X:
                 if not dryrun:
                     print(myrankmsg, 'Calculate: slp')
+                    sys.stdout.flush()
                 X['slp'] = calc_slp(sio, p0=X['p'][0], t0_ext=t0_ext, height=X['z'],
                                     qv=X['qv'], qhydro=X['qhydro'], lprate=conf['lprate'], t=it, dryrun=dryrun)
 
@@ -285,6 +303,7 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
 #                    if ivar != 'z' and (ivar in conf['varout_3d'] or ivar in ['p', 'tk', 'theta', 'rho', 'rhot']):
             if ivar != 'z' and (ivar in conf['varout_3d']):
                 print(myrankmsg, 'Vertical interpolation at Z-coordinate: ', ivar)
+                sys.stdout.flush()
                 Xitp[ivar] = interp_z(sio, X[ivar], height=X['z'], t=it, extrap=conf['extrap'])
         if 'z' in conf['varout_3d']:
             Xitp['z'] = np.empty((nzout, ny, nx), dtype=sio.z.dtype)
@@ -299,6 +318,7 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
                     kws[ivar] = Xitp[ivar]
                     kwslist += ivar + ', '
             print(myrankmsg, ' Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
+            sys.stdout.flush()
             extrap_z_pt(sio, p0=X['p'][0], t0_ext=t0_ext, height=X['z'],
                         qv=X['qv'], qhydro=X['qhydro'], lprate=conf['lprate'], t=it, **kws)
 
@@ -311,6 +331,7 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
         for ivar in X:
             if ivar != 'p' and (ivar in conf['varout_3d']):
                 print(myrankmsg, 'Vertical interpolation at P-coordinate: ', ivar)
+                sys.stdout.flush()
                 Xitp[ivar] = interp_p(sio, X[ivar], conf['plevels'], p=X['p'], t=it, extrap=conf['extrap'])
 
         if 'p' in conf['varout_3d']:
@@ -328,6 +349,7 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
                     kws[ivar] = Xitp[ivar]
                     kwslist += ivar + ', '
             print(myrankmsg, 'Calculate extrapolated values under the surface assuming a constant lapse rate: ' + kwslist[0:-2])
+            sys.stdout.flush()
             extrap_p_zt(sio, conf['plevels'], p=X['p'], t0_ext=t0_ext, height=X['z'],
                         qv=X['qv'], qhydro=X['qhydro'], lprate=conf['lprate'], t=it, **kws)
 
@@ -646,6 +668,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
         if commL is None:
             commL = comm
             print('<< My rank / total processes = {:d} / {:d} >>'.format(myrank, nprocs))
+            sys.stdout.flush()
         commL.Barrier()
         nprocsL = commL.Get_size()
         myrankL = commL.Get_rank()
@@ -696,6 +719,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
         print('nzout =', nzout)
         print('nt =', nt)
         print('--------------------')
+        sys.stdout.flush()
     else:
         sio = None
         nx = 0
@@ -732,6 +756,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
     if myrankL == 0:
         if gradsfile is not None and ctlfile is not None:
             print('Generate CTL file')
+            sys.stdout.flush()
             if ctlfile is 'auto':
                 ctlfile_ = '{0:s}.ctl'.format(gradsfile.rsplit('.', 1)[0])
             else:
@@ -749,6 +774,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
             nyll = int(np.rint((lat_e - lat_s) / conf['dlat'])) + 1
 
             print('Generate CTL file (lat/lon)')
+            sys.stdout.flush()
             if ctlfile_ll is 'auto':
                 ctlfile_ll_ = '{0:s}.ctl'.format(gradsfile_ll.rsplit('.', 1)[0])
             else:
@@ -828,6 +854,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
             # horizontal interpolation
             if gradsfile_ll is not None:
                 print(myrankmsg, 'Convert to lat/lon grid [to = {:d}]'.format(ito_a+1))
+                sys.stdout.flush()
                 X3dll, X2dll, lons, lone, nxout, lats, late, nyout = \
                     convert_hintp(sio, bmap, conf, X3d, X2d, conf['dlon'], conf['dlat'], conf['missing'])
 
@@ -852,9 +879,11 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                         f = open(gradsfile, 'r+b')
                     for iv in range(nv3d):
                         print(myrankmsg, 'Write 3D variable: {:s} [to = {:d}]'.format(conf['varout_3d'][iv], ito_a+1))
+                        sys.stdout.flush()
                         gradsio.writegrads(f, X3d[iv], iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nx, ny=ny, nz=nzout, nt=nt)
                     for iv in range(nv2d):
                         print(myrankmsg, 'Write 2D variable: {:s} [to = {:d}]'.format(conf['varout_2d'][iv], ito_a+1))
+                        sys.stdout.flush()
                         gradsio.writegrads(f, X2d[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nx, ny=ny, nz=nzout, nt=nt)
                     f.close()
 
@@ -867,9 +896,11 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                         f2 = open(gradsfile_ll, 'r+b')
                     for iv in range(nv3d):
                         print(myrankmsg, 'Write 3D variable (lat/lon): {:s} [to = {:d}]'.format(conf['varout_3d'][iv], ito_a+1))
+                        sys.stdout.flush()
                         gradsio.writegrads(f2, X3dll[iv], iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nxout, ny=nyout, nz=nzout, nt=nt)
                     for iv in range(nv2d):
                         print(myrankmsg, 'Write 2D variable (lat/lon): {:s} [to = {:d}]'.format(conf['varout_2d'][iv], ito_a+1))
+                        sys.stdout.flush()
                         gradsio.writegrads(f2, X2dll[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nxout, ny=nyout, nz=nzout, nt=nt)
                     f2.close()
                 ######

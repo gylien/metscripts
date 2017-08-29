@@ -4,6 +4,7 @@ import ncphysio
 import os.path
 import datetime as dt
 import warnings
+import sys
 from netCDF4 import Dataset, num2date, date2num
 
 
@@ -456,14 +457,17 @@ class ScaleIO:
                 if tkey in self.cache[varname]:
                     if verbose >= 2:
                         print('Read variable: ' + varname + tshow + ' -- from cache')
+                        sys.stdout.flush()
                     res = self.cache[varname][tkey]
                 elif 'all' in self.cache[varname] and tkey != 'all':
                     if verbose >= 2:
                         print('Read variable: ' + varname + tshow + ' -- from cache')
+                        sys.stdout.flush()
                     res = self.cache[varname]['all'][tkey]
                 else:
                     if verbose >= 1:
                         print('Read variable: ' + varname + tshow)
+                        sys.stdout.flush()
                     if tkey == 'all':
                         self.cache[varname].clear()
                     self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
@@ -471,12 +475,14 @@ class ScaleIO:
             else:
                 if verbose >= 1:
                     print('Read variable: ' + varname + tshow)
+                    sys.stdout.flush()
                 self.cache[varname] = {}
                 self.cache[varname][tkey] = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
                 res = self.cache[varname][tkey]
         else:
             if verbose >= 1:
                 print('Read variable: ' + varname + tshow)
+                sys.stdout.flush()
             res = scale_read(self.nproc, self.rootgrps, self.dimdef, varname, t=t)[1]
 
         if bufsize == 0 or len(res.shape) < 2:
@@ -532,6 +538,7 @@ class ScaleIO:
 
         if verbose >= 1:
             print('Write variable: ' + varname + tshow)
+            sys.stdout.flush()
         if bufsize == 0 or len(vardata.shape) < 2:
             scale_write(self.nproc, self.rootgrps, self.dimdef, varname, vardata, t=t)
         else:

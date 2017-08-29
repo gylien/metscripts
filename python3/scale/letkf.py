@@ -1,6 +1,7 @@
 import numpy as np
 import datetime as dt
 import os
+import sys
 from .io import ScaleIO
 from .grads import convert, conf_default
 
@@ -89,6 +90,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
         print('Time interval: {:.0f} s'.format(tint.total_seconds()))
         print('============================================================')
         print()
+        sys.stdout.flush()
 
     ###### outtype = 'gues', 'anal' ######
 
@@ -179,6 +181,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                 print('{:6d}  {:s}.pe______.nc'.format(nn+1, basename[nn]))
             print('------------------------------------------------------------')
             print()
+            sys.stdout.flush()
 
         nprocs_use = min(nprocs, sim_read)
 
@@ -203,6 +206,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             ito_a = nprocs_use * ito + myrank
 
             print(myrankmsg, '{:s}.pe______.nc'.format(basename[ito_a]))
+            sys.stdout.flush()
 
             convert(basename[ito_a], topo=topofile, t=time[ito_a], tint=tint,
                     ftype=ftype[ito_a], vcoor=vcoor, plevels=plevels, dlon=dlon, dlat=dlat,
@@ -213,6 +217,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                 ifile = kws[ito_a][hg_ctlargs[ihg]]
                 if ifile is not None:
                     print(myrankmsg, 'Post-process ctl file: {:s}'.format(ifile))
+                    sys.stdout.flush()
 
                     with open(ifile, 'r') as f:
                         ctltext = f.read()
@@ -317,6 +322,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             for nn in range(n):
                 print('{:6d}  {:s}.pe______.nc'.format(nn+1, basename[nn]))
             print('------------------------------------------------------------')
+            sys.stdout.flush()
         else:
             ntf = 0
 
@@ -355,6 +361,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             print('sim_read_L =', sim_read_L)
             print('------------------------------------------------------------')
             print()
+            sys.stdout.flush()
 
         its_a = 0
         ite_a = n
@@ -377,6 +384,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             ito_a = nsplit * ito + mycolor
 
             print(myrankmsg, '{:s}.pe______.nc'.format(basename[ito_a]))
+            sys.stdout.flush()
 
             convert(basename[ito_a], t=None,
                     ftype=ftype[ito_a], vcoor=vcoor, plevels=plevels, dlon=dlon, dlat=dlat,
@@ -391,6 +399,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     ifile = kws[ito_a][hg_ctlargs[ihg]]
                     if ifile is not None:
                         print(myrankmsg, 'Post-process ctl file: {:s}'.format(ifile))
+                        sys.stdout.flush()
 
                         if im[ito_a] == '0001':
                             with open(ifile, 'r') as f:
