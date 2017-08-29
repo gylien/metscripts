@@ -829,7 +829,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
 
             # read data in 'dryrun' mode, one process follows the previous process sequentially
             ######
-            if commL is not None and ito_a >= sim_read:
+            if commL is not None and nprocsL > sim_read and ito_a >= sim_read:
                 srank = myrankL - sim_read
                 if srank < 0:
                     srank += nprocsL
@@ -850,7 +850,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                     del sio_topo
             X, t0_ext = convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=True)
             ######
-            if commL is not None and ito_a + sim_read < nto_a:
+            if commL is not None and nprocsL > sim_read and ito_a + sim_read < nto_a:
                 drank = myrankL + sim_read
                 if drank >= nprocsL:
                     drank -= nprocsL
@@ -876,7 +876,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
             if gradsfile is not None or gradsfile_ll is not None:
                 # write grads data, one process follows the previous process sequentially
                 ######
-                if commL is not None and ito_a >= sim_read:
+                if commL is not None and nprocsL > sim_read and ito_a >= sim_read:
                     srank = myrankL - sim_read
                     if srank < 0:
                         srank += nprocsL
@@ -917,7 +917,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
                         gradsio.writegrads(f2, X2dll[iv], nv3d+iv+1, nv3d=nv3d, nv2d=nv2d, t=ito_a+1, nx=nxout, ny=nyout, nz=nzout, nt=nt)
                     f2.close()
                 ######
-                if commL is not None and ito_a + sim_read < nto_a:
+                if commL is not None and nprocsL > sim_read and ito_a + sim_read < nto_a:
                     drank = myrankL + sim_read
                     if drank >= nprocsL:
                         drank -= nprocsL
