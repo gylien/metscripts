@@ -10,6 +10,7 @@ from .calc import *
 #from scale.proj import *
 import gradsio
 import sys
+import warnings
 
 #try:
 #    from mpi4py import MPI
@@ -304,6 +305,12 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
             if ivar != 'z' and (ivar in conf['varout_3d']):
                 print(myrankmsg, 'Vertical interpolation at Z-coordinate: ', ivar)
                 sys.stdout.flush()
+                if (X[ivar].dtype.byteorder == '>' and sys.byteorder == 'little') or (X[ivar].dtype.byteorder == '<' and sys.byteorder == 'big'):
+                    warnings.warn("Swap the endian of X['{:s}'] for input of 'interp_z' function".format(ivar))
+                    X[ivar] = X[ivar].byteswap().newbyteorder()
+                if (X['z'].dtype.byteorder == '>' and sys.byteorder == 'little') or (X['z'].dtype.byteorder == '<' and sys.byteorder == 'big'):
+                    warnings.warn("Swap the endian of X['z'] for input of 'interp_z' function")
+                    X['z'] = X['z'].byteswap().newbyteorder()
                 Xitp[ivar] = interp_z(sio, X[ivar], height=X['z'], t=it, extrap=conf['extrap'])
         if 'z' in conf['varout_3d']:
             Xitp['z'] = np.empty((nzout, ny, nx), dtype=sio.z.dtype)
@@ -332,6 +339,12 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
             if ivar != 'p' and (ivar in conf['varout_3d']):
                 print(myrankmsg, 'Vertical interpolation at P-coordinate: ', ivar)
                 sys.stdout.flush()
+                if (X[ivar].dtype.byteorder == '>' and sys.byteorder == 'little') or (X[ivar].dtype.byteorder == '<' and sys.byteorder == 'big'):
+                    warnings.warn("Swap the endian of X['{:s}'] for input of 'interp_p' function".format(ivar))
+                    X[ivar] = X[ivar].byteswap().newbyteorder()
+                if (X['p'].dtype.byteorder == '>' and sys.byteorder == 'little') or (X['p'].dtype.byteorder == '<' and sys.byteorder == 'big'):
+                    warnings.warn("Swap the endian of X['p'] for input of 'interp_p' function")
+                    X['p'] = X['p'].byteswap().newbyteorder()
                 Xitp[ivar] = interp_p(sio, X[ivar], conf['plevels'], p=X['p'], t=it, extrap=conf['extrap'])
 
         if 'p' in conf['varout_3d']:
