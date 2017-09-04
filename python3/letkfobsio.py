@@ -203,3 +203,27 @@ def writeobs_all(fo, data, endian=None):
         fo.write(struct.pack(dtypistr, sglobs_ndarray.nbytes))
         sglobs_ndarray.tofile(fo)
         fo.write(struct.pack(dtypistr, sglobs_ndarray.nbytes))
+
+def writeobs_radar_all(fo, radar_lon, radar_lat, radar_z, data, endian=None):
+    dtyp, dtypistr = endian_det(endian)
+
+    fo.seek(0)
+
+    tmp_ndarray = np.array(radar_lon, dtype=dtyp)
+    fo.write(struct.pack(dtypistr, tmp_ndarray.nbytes))
+    tmp_ndarray.tofile(fo)
+    fo.write(struct.pack(dtypistr, tmp_ndarray.nbytes))
+    tmp_ndarray = np.array(radar_lat, dtype=dtyp)
+    fo.write(struct.pack(dtypistr, tmp_ndarray.nbytes))
+    tmp_ndarray.tofile(fo)
+    fo.write(struct.pack(dtypistr, tmp_ndarray.nbytes))
+    tmp_ndarray = np.array(radar_z, dtype=dtyp)
+    fo.write(struct.pack(dtypistr, tmp_ndarray.nbytes))
+    tmp_ndarray.tofile(fo)
+    fo.write(struct.pack(dtypistr, tmp_ndarray.nbytes))
+
+    for sglobs in data:
+        sglobs_ndarray = np.array(tuple(sglobs), dtype=dtyp)
+        fo.write(struct.pack(dtypistr, sglobs_ndarray.nbytes))
+        sglobs_ndarray.tofile(fo)
+        fo.write(struct.pack(dtypistr, sglobs_ndarray.nbytes))
