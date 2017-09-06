@@ -311,6 +311,9 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
                 if (X['z'].dtype.byteorder == '>' and sys.byteorder == 'little') or (X['z'].dtype.byteorder == '<' and sys.byteorder == 'big'):
                     warnings.warn("Swap the endian of X['z'] for input of 'interp_z' function")
                     X['z'] = X['z'].byteswap().newbyteorder()
+                if (sio.z.dtype.byteorder == '>' and sys.byteorder == 'little') or (sio.z.dtype.byteorder == '<' and sys.byteorder == 'big'):
+                    warnings.warn("Swap the endian of sio.z for input of 'interp_z' function")
+                    sio.z = sio.z.byteswap().newbyteorder()
                 Xitp[ivar] = interp_z(sio, X[ivar], height=X['z'], t=it, extrap=conf['extrap'])
         if 'z' in conf['varout_3d']:
             Xitp['z'] = np.empty((nzout, ny, nx), dtype=sio.z.dtype)
