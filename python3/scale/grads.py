@@ -35,6 +35,7 @@ conf_default = {
          'basepoint_y': None,
          'LC_lat1': 30.,
          'LC_lat2': 40.,},
+'rtol': 1.e-6,
 'extrap': True,
 'lprate': 0.0065,
 'zfree': 200.,
@@ -726,7 +727,7 @@ def convert(basename, topo=None, t=dt.datetime(2000, 1, 1), tint=dt.timedelta(ho
             nt = 1
         else:
             nt = len(sio.t)
-        bmap = set_bmap(sio, conf['proj'])
+        bmap = set_bmap(sio, conf['proj'], rtol=conf['rtol'])
 
         print('--------------------')
         print('nx =', nx)

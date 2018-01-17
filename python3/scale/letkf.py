@@ -16,7 +16,7 @@ __all__ = ['letkfout_grads']
 
 def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timedelta(hours=6),
                    outtype='all', member='all', vcoor='o', hcoor='o',
-                   plevels=None, dlon=None, dlat=None,
+                   plevels=None, dlon=None, dlat=None, rtol=None,
                    varout_3d=None, varout_2d=None,
                    extrap=None, tstart=None, tend=None, tskip=None,
                    comm=None, sim_read=1):
@@ -211,7 +211,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             convert(basename[ito_a], topo=topofile, t=time[ito_a], tint=tint,
                     ftype=ftype[ito_a], vcoor=vcoor, plevels=plevels, dlon=dlon, dlat=dlat,
                     varout_3d=varout_3d, varout_2d=varout_2d,
-                    proj=proj, extrap=extrap, comm=None, sim_read=1, **kws[ito_a])
+                    proj=proj, rtol=rtol, extrap=extrap, comm=None, sim_read=1, **kws[ito_a])
 
             for ihg in hglist:
                 ifile = kws[ito_a][hg_ctlargs[ihg]]
@@ -389,7 +389,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             convert(basename[ito_a], t=None,
                     ftype=ftype[ito_a], vcoor=vcoor, plevels=plevels, dlon=dlon, dlat=dlat,
                     varout_3d=varout_3d, varout_2d=varout_2d,
-                    proj=proj, extrap=extrap, tstart=tstart, tend=tend, tskip=tskip,
+                    proj=proj, rtol=rtol, extrap=extrap, tstart=tstart, tend=tend, tskip=tskip,
                     comm=comm, commL=commL, sim_read=sim_read_L, **kws[ito_a])
             if nprocs > 1:
                 commL.Barrier()

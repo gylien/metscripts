@@ -23,7 +23,7 @@ missingv = 1.e-33
 rsphere = 6.37122e6
 
 
-def set_bmap(sio, proj, resolution=None):
+def set_bmap(sio, proj, resolution=None, rtol=1.e-6):
     """
     Set map projection
 
@@ -49,9 +49,9 @@ def set_bmap(sio, proj, resolution=None):
     x += sio.dimdef['coor_g']['x'][0]
     y += sio.dimdef['coor_g']['y'][0]
     for iy in range(sio.dimdef['len_g']['y']):
-        npt.assert_almost_equal(x[iy,:], sio.dimdef['coor_g']['x'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+        npt.assert_allclose(x[iy,:], sio.dimdef['coor_g']['x'], rtol=rtol, err_msg='[Error] Incorrect projection settings.')
     for ix in range(sio.dimdef['len_g']['x']):
-        npt.assert_almost_equal(y[:,ix], sio.dimdef['coor_g']['y'], decimal=6, err_msg='[Error] Incorrect projection settings.')
+        npt.assert_allclose(y[:,ix], sio.dimdef['coor_g']['y'], rtol=rtol, err_msg='[Error] Incorrect projection settings.')
 
     return bmap
 
