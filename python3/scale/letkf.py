@@ -19,7 +19,7 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                    plevels=None, dlon=None, dlat=None, rtol=None,
                    varout_3d=None, varout_2d=None,
                    extrap=None, tstart=None, tend=None, tskip=None,
-                   comm=None, sim_read=1):
+                   comm=None, sim_read=1, pnetcdf=False):
     """
     """
     # Determine if the mpi4py is used
@@ -80,6 +80,11 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
     else:
         raise ValueError("'outtype' must be {'gues', 'anal', 'fcst', array-like}.")
 
+    if pnetcdf:
+        suffix0 = '.nc'
+    else:
+        suffix0 = '.pe000000.nc'
+
     # print head messages
     #------------
     if myrank == 0:
@@ -121,8 +126,11 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                         if type(iim) == int:
                             iim = '{:04d}'.format(iim)
 
-                        basenametmp = "{:s}/{:s}/{:s}/{:s}/init".format(letkfoutdir, timef, ityp, iim)
-                        if os.path.isfile(basenametmp + ".pe000000.nc"):
+                        if pnetcdf:
+                            basenametmp = "{:s}/{:s}/{:s}/{:s}.init".format(letkfoutdir, timef, ityp, iim)
+                        else:
+                            basenametmp = "{:s}/{:s}/{:s}/{:s}/init".format(letkfoutdir, timef, ityp, iim)
+                        if os.path.isfile(basenametmp + suffix0):
                             basename.append(basenametmp)
                             kws.append({'gradsfile': None, 'ctlfile': None, 'gradsfile_ll': None, 'ctlfile_ll': None})
                             time.append(itime)
@@ -178,7 +186,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             print('------------------------------------------------------------')
             print("Process 'gues' and 'anal' files:")
             for nn in range(n):
-                print('{:6d}  {:s}.pe______.nc'.format(nn+1, basename[nn]))
+                if pnetcdf:
+                      print('{:6d}  {:s}.nc'.format(nn+1, basename[nn]))
+                else:
+                      print('{:6d}  {:s}.pe______.nc'.format(nn+1, basename[nn]))
             print('------------------------------------------------------------')
             print()
             sys.stdout.flush()
@@ -205,7 +216,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             it_a = its_a + nprocs_use * ito
             ito_a = nprocs_use * ito + myrank
 
-            print(myrankmsg, '{:s}.pe______.nc'.format(basename[ito_a]))
+            if pnetcdf:
+                print(myrankmsg, '{:s}.nc'.format(basename[ito_a]))
+            else:
+                print(myrankmsg, '{:s}.pe______.nc'.format(basename[ito_a]))
             sys.stdout.flush()
 
             convert(basename[ito_a], topo=topofile, t=time[ito_a], tint=tint,
@@ -267,8 +281,11 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
                     if type(iim) == int:
                         iim = '{:04d}'.format(iim)
 
-                    basenametmp = "{:s}/{:s}/{:s}/{:s}/history".format(letkfoutdir, timef, ityp, iim)
-                    if os.path.isfile(basenametmp + ".pe000000.nc"):
+                    if pnetcdf:
+                        basenametmp = "{:s}/{:s}/{:s}/{:s}.history".format(letkfoutdir, timef, ityp, iim)
+                    else:
+                        basenametmp = "{:s}/{:s}/{:s}/{:s}/history".format(letkfoutdir, timef, ityp, iim)
+                    if os.path.isfile(basenametmp + suffix0):
                         basename.append(basenametmp)
                         kws.append({'gradsfile': None, 'ctlfile': None, 'gradsfile_ll': None, 'ctlfile_ll': None})
                         time.append(itime)
@@ -320,7 +337,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             print('------------------------------------------------------------')
             print("Process 'fcst' files:")
             for nn in range(n):
-                print('{:6d}  {:s}.pe______.nc'.format(nn+1, basename[nn]))
+                if pnetcdf:
+                    print('{:6d}  {:s}.nc'.format(nn+1, basename[nn]))
+                else:
+                    print('{:6d}  {:s}.pe______.nc'.format(nn+1, basename[nn]))
             print('------------------------------------------------------------')
             sys.stdout.flush()
         else:
@@ -383,7 +403,10 @@ def letkfout_grads(letkfoutdir, topofile, proj, stime, etime=None, tint=dt.timed
             it_a = its_a + nsplit * ito
             ito_a = nsplit * ito + mycolor
 
-            print(myrankmsg, '{:s}.pe______.nc'.format(basename[ito_a]))
+            if pnetcdf:
+                print(myrankmsg, '{:s}.nc'.format(basename[ito_a]))
+            else:
+                print(myrankmsg, '{:s}.pe______.nc'.format(basename[ito_a]))
             sys.stdout.flush()
 
             convert(basename[ito_a], t=None,

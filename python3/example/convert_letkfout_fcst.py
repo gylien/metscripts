@@ -45,9 +45,10 @@ tend = -1
 tskip = 1
 
 sim_read = 8
+pnetcdf = False
 
 letkfout_grads(letkfoutdir, topofile=topofile, proj=proj, stime=stime, etime=etime, tint=tint,
                outtype=outtype, member=member,
                vcoor=vcoor, hcoor=hcoor, plevels=plevels, dlon=dlon, dlat=dlat,
                varout_3d=varout_3d, varout_2d=varout_2d, extrap=extrap,
-               tstart=tstart, tend=tend, tskip=tskip, comm=comm, sim_read=sim_read)
+               tstart=tstart, tend=tend, tskip=tskip, comm=comm, sim_read=sim_read, pnetcdf=pnetcdf)

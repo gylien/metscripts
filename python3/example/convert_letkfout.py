@@ -47,9 +47,11 @@ tint = dt.timedelta(seconds=30)
 outtype = ['anal', 'gues']
 member = 1
 
+pnetcdf = False
+
 
 letkfout_grads(letkfoutdir, topofile=topofile, proj=proj, stime=stime, etime=etime, tint=tint,
                outtype=outtype, member=member,
                vcoor=vcoor, hcoor=hcoor, plevels=plevels, dlon=dlon, dlat=dlat,
                varout_3d=varout_3d, varout_2d=varout_2d, extrap=extrap,
-               comm=comm, sim_read=sim_read)
+               comm=comm, sim_read=sim_read, pnetcdf=pnetcdf)

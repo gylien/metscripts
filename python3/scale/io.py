@@ -28,6 +28,7 @@ scale_dimlist_g = [
 ['x', 'xh']
 ]
 scale_file_suffix = '.pe{:06d}.nc'
+scale_file_suffix_single = '.nc'
 
 
 def scale_open(basename, mode='r', scale_dimdef=None):
@@ -61,13 +62,17 @@ def scale_open(basename, mode='r', scale_dimdef=None):
         scale_dimdef['start'] : dictionary
             Start indices of global dimensions
     """
-    ncfile = basename + scale_file_suffix.format(0)
-    if not os.path.isfile(ncfile):
+    if os.path.isfile(basename + scale_file_suffix_single):
+        is_single = True
+    elif os.path.isfile(basename + scale_file_suffix.format(0)):
+        is_single = False
+    else:
         if mode == 'r':
             raise IOError("File does not exist... basename = '" + basename + "'")
         elif scale_dimdef is None:
             raise IOError("File does not exist... basename = '" + basename + "'")
         else:
+#            is_single = False
 #            scale_create_new(basename, scale_dimdef)
             raise IOError('Scale_create has not been supported yet...')
 
@@ -77,7 +82,10 @@ def scale_open(basename, mode='r', scale_dimdef=None):
     sub_var = {}
     ip = 0
     while True:
-        ncfile = basename + scale_file_suffix.format(ip)
+        if is_single:
+            ncfile = basename + scale_file_suffix_single
+        else:
+            ncfile = basename + scale_file_suffix.format(ip)
 
 ###
 ###        print(ncfile)
@@ -98,6 +106,8 @@ def scale_open(basename, mode='r', scale_dimdef=None):
                     sub_idx[idim] += list(range(len(rootgrps[ip].dimensions[idim])))
                     sub_var[idim] = np.append(sub_var[idim], rootgrps[ip].variables[idim][:])
         ip += 1
+        if is_single:
+            break
     nproc = ip
 
 #    dimlen = ncphysio.ncphys_read_dimlen(rootgrps[0], dimlist=scale_dimlist)
