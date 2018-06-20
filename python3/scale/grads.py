@@ -74,6 +74,7 @@ var_2d_name = {
 'topo': 'Topography height (m)',
 'u10': '10m u-wind (m/s)',
 'v10': '10m v-wind (m/s)',
+'uabs10': '10m wind speed (m/s)',
 't2': '2m temperature (K)',
 'q2': '2m water vapor mixing ratio (kg/kg)',
 'rhosfc': 'Surface air density (kg/m^3)',
@@ -81,8 +82,14 @@ var_2d_name = {
 'slp': 'Sea level pressure (Pa)',
 'rain': 'Surface rain rate (mm/s)',
 'snow': 'Surface snow rate (mm/s)',
+'prec': 'Surface precipitation rate (mm/s)',
 'max_dbz': 'Maximum radar reflectivity (dBZ)',
 'olr': 'TOA net longwave radiation flux (W/m^2)',
+'osr': 'TOA net shortwave radiation flux (W/m^2)',
+'slr': 'Surface net longwave radiation flux (W/m^2)',
+'ssr': 'Surface net shortwave radiation flux (W/m^2)',
+'sflx_lw_dn': 'Surface downward longwave radiation flux (W/m^2)',
+'sflx_sw_dn': 'Surface downward shortwave radiation flux (W/m^2)',
 'tsfc': 'Surface skin temperature (merged) (K)',
 'tsfcocean': 'Ocean surface skin temperature (K)',
 'sst': 'Temperature at uppermost ocean layer (K)',
@@ -229,7 +236,8 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
                 sys.stdout.flush()
             X['p'], X['tk'], X['theta'] = calc_pt(sio, qhydro=X['qhydro'], tout=True, thetaout=True, t=it, dryrun=dryrun)
 
-        for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('t2', 'T2'), ('q2', 'Q2'), ('olr', 'OLR'), ('slp', 'MSLP'), \
+        for ivar, ivarf in ('u10', 'U10'), ('v10', 'V10'), ('uabs10', 'Uabs10'), ('t2', 'T2'), ('q2', 'Q2'), ('slp', 'MSLP'), \
+                           ('olr', 'OLR'), ('osr', 'OSR'), ('slr', 'SLR'), ('ssr', 'SSR'), ('sflx_lw_dn', 'SFLX_LW_dn'), ('sflx_sw_dn', 'SFLX_SW_dn'), \
                            ('sst', 'OCEAN_TEMP'), ('tsfc', 'SFC_TEMP'), ('tsfcocean', 'OCEAN_SFC_TEMP'), ('glon', 'lon'), ('glat', 'lat'):
             if ivar in conf['varout_2d'] or ivar in var_necessary:
                 X[ivar] = sio.readvar(ivarf, t=it)
@@ -240,7 +248,7 @@ def convert_readvar(sio, bmap, topo, conf, var_necessary, it, tskip_a, dryrun=Fa
                 sys.stdout.flush()
                 X['u10'], X['v10'] = calc_rotate_winds(sio, bmap, u=X['u10'], v=X['v10'], t=it)
 
-        for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'):
+        for ivar, ivarf in ('rain', 'RAIN'), ('snow', 'SNOW'), ('prec', 'PREC'):
             if ivar in conf['varout_2d'] or ivar in var_necessary:
                 iits = max(it-tskip_a+1, 0)
                 if dryrun:

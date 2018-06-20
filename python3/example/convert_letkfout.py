@@ -20,10 +20,8 @@ if nprocs > sim_read:
 vcoor = 'o'
 hcoor = 'o'
 plevels = [100000., 92500., 85000., 70000., 50000., 30000., 20000., 10000., 5000., 2000., 1000., 500.]
-varout_3d = ['u', 'v', 'w', 'tk', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz']  # variables for restart file
-#varout_3d = ['u', 'v', 'w', 'p', 'tk', 'theta', 'z', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'rh', 'dbz']                                   # variables for history file
-varout_2d = ['topo', 'slp', 'rain', 'snow', 'max_dbz']                                                                     # variables for restart file
-#varout_2d = ['topo', 'slp', 'u10', 'v10', 't2', 'q2', 'rain', 'snow', 'max_dbz', 'olr', 'tsfc', 'tsfcocean', 'sst', 'glon', 'glat']               # variables for history file
+varout_3d = ['u', 'v', 'w', 'tk', 'qv', 'qc', 'qr', 'qi', 'qs', 'qg', 'qhydro', 'dbz'] # all available output 3D variables for restart file
+varout_2d = ['topo', 'slp', 'rain', 'snow', 'max_dbz']                                 # all available output 2D variables for restart file
 proj = {
 'type': 'LC',
 'basepoint_lon': 135.523,
