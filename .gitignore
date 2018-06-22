@@ -1,6 +1,7 @@
 *.pyc
 *.o
 *.c
+!*/c_module/**/*.c
 *.html
 *.so
 __pycache__

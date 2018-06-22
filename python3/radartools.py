@@ -3,9 +3,68 @@ import numpy.ma as ma
 from fortranio import *
 import datetime as dt
 import time
+from c_module.read_toshiba import *
 
 
 Re = 6370.e3 # Earth radius in (m)
+
+
+def radarobs_read_toshiba(fname_ref, fname_vr=None, fname_qc=None):
+    t0 = time.time()
+    data = {}
+
+    hd, az, el, rtdat = read_toshiba(fname_ref)
+
+    try:
+        data['time'] = dt.datetime(hd.s_yr, hd.s_mn, hd.s_dy, hd.s_hr, hd.s_mi, hd.s_sc)
+    except ValueError:
+        data['time'] = None
+
+    data['radar_lon'] = hd.longitude
+    data['radar_lat'] = hd.latitude
+    data['radar_alt'] = hd.altitude
+    data['beam_wid_h'] = hd.beam_wid_h
+    data['beam_wid_v'] = hd.beam_wid_v
+    data['beam_wid_r'] = float(hd.range_res)
+    data['lambda'] = 0.0
+    data['undef'] = DMISS
+
+    data['na'] = hd.sector_num
+    data['nr'] = hd.range_num
+    data['ne'] = hd.total_el_num
+    data['nvar'] = 1
+
+    data['azim'] = az[0, 0:data['na']]
+    data['radi'] = np.arange(0., float(hd.range_res) * (data['nr']-0.5), float(hd.range_res), dtype='f4')
+    data['elev'] = el[0:data['ne'], 0]
+
+    data['attn_fac'] = 0.0
+
+    data['ref'] = ma.masked_values(np.transpose(rtdat[0:data['ne'], 0:data['na'], 0:data['nr']], (0, 2, 1)), data['undef'])
+
+    t1 = time.time()
+    print("Radar data '{:s}' was read in {:.3f} seconds".format(fname_ref, t1 - t0))
+    t0 = t1
+
+    if fname_vr is not None:
+        hd, az, el, rtdat = read_toshiba(fname_vr)
+        data['nvar'] += 1
+        data['wind'] = ma.masked_values(np.transpose(rtdat[0:data['ne'], 0:data['na'], 0:data['nr']], (0, 2, 1)), data['undef'])
+
+        t1 = time.time()
+        print("Radar data '{:s}' was read in {:.3f} seconds".format(fname_vr, t1 - t0))
+        t0 = t1
+
+    if fname_qc is not None:
+        hd, az, el, rtdat = read_toshiba(fname_qc)
+        data['nvar'] += 1
+        data['qc'] = ma.masked_values(np.transpose(rtdat[0:data['ne'], 0:data['na'], 0:data['nr']], (0, 2, 1)), data['undef'])
+
+        t1 = time.time()
+        print("Radar data '{:s}' was read in {:.3f} seconds".format(fname_qc, t1 - t0))
+        t0 = t1
+
+    return data
 
 
 def radarobs_read(filename, endian=''):
@@ -103,7 +162,7 @@ def ll_arc_distance(lon0, lat0, arc_dist, az):
     return lon, lat
 
 
-def radar_georeference(data, lon=None, lat=None, radi_h=None):
+def radar_georeference(data, lon=None, lat=None, radi_h=None, savedata=False):
     Ns = 1.21
     ke = 4. / 3.
 
@@ -129,7 +188,7 @@ def radar_georeference(data, lon=None, lat=None, radi_h=None):
     data['lat'] = np.zeros((data['ne'], data['nr'], data['na']), dtype='f4')
     data['hgt'] = np.zeros((data['ne'], data['nr'], data['na']), dtype='f4')
 
-    if (lon is None) or (lat is None) or (radi_h is None):
+    if savedata or (lon is None) or (lat is None) or (radi_h is None):
         for ie in range(data['ne']):
 
             print('ie =', ie)
@@ -142,9 +201,10 @@ def radar_georeference(data, lon=None, lat=None, radi_h=None):
                     data['lon'][ie,ir,ia], data['lat'][ie,ir,ia] = \
                         ll_arc_distance(data['radar_lon'], data['radar_lat'], data['radi_h'][ie,ir], data['azim'][ia])
 
-#        np.save('radi_h.npy', data['radi_h'])
-#        np.save('lon.npy', data['lon'])
-#        np.save('lat.npy', data['lat'])
+        if savedata and (lon is not None) and (lat is not None) and (radi_h is not None):
+            np.save(radi_h, data['radi_h'])
+            np.save(lon, data['lon'])
+            np.save(lat, data['lat'])
 
     else:
         data['radi_h'] = np.load(radi_h)
