@@ -9,7 +9,7 @@ from c_module.read_toshiba import *
 Re = 6370.e3 # Earth radius in (m)
 
 
-def radarobs_read_toshiba(fname_ref, fname_vr=None, fname_qc=None):
+def radarobs_read_toshiba(fname_ref, fname_vr=None, fname_qc=None, apply_qc=False, elev_uniq=False):
     t0 = time.time()
     data = {}
 
@@ -63,6 +63,55 @@ def radarobs_read_toshiba(fname_ref, fname_vr=None, fname_qc=None):
         t1 = time.time()
         print("Radar data '{:s}' was read in {:.3f} seconds".format(fname_qc, t1 - t0))
         t0 = t1
+
+        if apply_qc:
+            data['ref'] = ma.masked_where(data['qc'] > 1.1, data['ref'])
+            if fname_vr is not None:
+                data['wind'] = ma.masked_where(data['qc'] > 0.5, data['wind'])
+
+            t1 = time.time()
+            print("Applied QC in {:.3f} seconds".format(t1 - t0))
+            t0 = t1
+
+    if elev_uniq:
+        elev_uq, elev_idx = np.unique(data['elev'], return_index=True)
+        ne_uq = len(elev_uq)
+        if ne_uq < data['ne']:
+            print("Repeated elevation angles are found. Reduce the number of elevation angles from {:d} to {:d}".format(data['ne'], ne_uq))
+            elev_idx_2 = np.append(elev_idx[1:], data['ne'])
+
+            ref_uq = np.empty((ne_uq, data['nr'], data['na']), dtype=data['ref'].dtype)
+            for ie_uq, (ie, ie_2) in enumerate(zip(elev_idx, elev_idx_2)):
+                if ie_2 - ie == 1:
+                    ref_uq[ie_uq,:,:] = data['ref'][ie,:,:]
+                else:
+                    ref_uq[ie_uq,:,:] = ma.mean(data['ref'][ie:ie_2,:,:], axis=0)
+            data['ref'] = ref_uq
+
+            if fname_vr is not None:
+                vr_uq = np.empty((ne_uq, data['nr'], data['na']), dtype=data['wind'].dtype)
+                for ie_uq, (ie, ie_2) in enumerate(zip(elev_idx, elev_idx_2)):
+                    if ie_2 - ie == 1:
+                        vr_uq[ie_uq,:,:] = data['wind'][ie,:,:]
+                    else:
+                        vr_uq[ie_uq,:,:] = ma.mean(data['wind'][ie:ie_2,:,:], axis=0)
+                data['wind'] = vr_uq
+
+            if fname_qc is not None:
+                qc_uq = np.empty((ne_uq, data['nr'], data['na']), dtype=data['wind'].dtype)
+                for ie_uq, (ie, ie_2) in enumerate(zip(elev_idx, elev_idx_2)):
+                    if ie_2 - ie == 1:
+                        qc_uq[ie_uq,:,:] = data['qc'][ie,:,:]
+                    else:
+                        qc_uq[ie_uq,:,:] = ma.max(data['qc'][ie:ie_2,:,:], axis=0)
+                data['qc'] = qc_uq
+
+            data['ne'] = ne_uq
+            data['elev'] = elev_uq
+
+            t1 = time.time()
+            print("Reduced the number of elevation angles in {:.3f} seconds".format(t1 - t0))
+            t0 = t1
 
     return data
 

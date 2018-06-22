@@ -7,5 +7,6 @@ sfx_ref = ".10000000.dat"
 sfx_vr  = ".20000000.dat"
 sfx_qc  = "_pawr_qcf.dat"
 
-data = radarobs_read_toshiba(radarfiles+sfx_ref, fname_vr=radarfiles+sfx_vr, fname_qc=radarfiles+sfx_qc)
+data = radarobs_read_toshiba(radarfiles+sfx_ref, fname_vr=radarfiles+sfx_vr, fname_qc=radarfiles+sfx_qc,
+                             apply_qc=True, elev_uniq=True)
 
