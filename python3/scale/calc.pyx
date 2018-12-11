@@ -425,8 +425,12 @@ def calc_destagger_uvw(sio, rho=None, momx=None, momy=None, momz=None, destagger
 #        print(' --- destagger momy')
         momy_ = calc_destagger(momy_, axis=1, first_grd=first_grd)
 #        print(' --- destagger momz')
-        momz_ = calc_destagger(momz_, axis=0, first_grd=False)
-    momz_[0,:,:] = 0.
+
+        if momz_.shape[0] == sio.dimdef['len']['z'][0]: # until 5.2
+            momz_ = calc_destagger(momz_, axis=0, first_grd=False)
+            momz_[0,:,:] = 0.
+        else: # after 5.3
+            momz_ = calc_destagger(momz_, axis=0, first_grd=True)
 
 #    print(2)
 

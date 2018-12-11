@@ -392,7 +392,14 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
     iv3d = 0
     for ivar in conf['varout_3d']:
         if type(Xout[ivar]) == ma.MaskedArray:
-            X3d[iv3d] = Xout[ivar].filled(fill_value=conf['missing'])
+            if conf['ftype'] == 'restart_sprd' and ivar == "tk" and sio.dimdef['len']['z'][0] != sio.dimdef['len']['zh'][0]: # until 5.2:
+               X3d[iv3d] = Xout[ivar].filled(fill_value=conf['missing'])[1::,:,:]
+            else:
+               X3d[iv3d] = Xout[ivar].filled(fill_value=conf['missing'])
+
+            print("DEBUG",ivar)
+            print(Xout[ivar].shape)
+            print(X3d[iv3d].shape)
         else:
             X3d[iv3d] = Xout[ivar]
         iv3d += 1
