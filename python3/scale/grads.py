@@ -397,9 +397,6 @@ def convert_vintp(sio, conf, X, t0_ext, nx, ny, nzout, it, myrankmsg=''):
             else:
                X3d[iv3d] = Xout[ivar].filled(fill_value=conf['missing'])
 
-            print("DEBUG",ivar)
-            print(Xout[ivar].shape)
-            print(X3d[iv3d].shape)
         else:
             X3d[iv3d] = Xout[ivar]
         iv3d += 1
